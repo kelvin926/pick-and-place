@@ -1,0 +1,12 @@
+.omni*/
+.tmp/
+__pycache__/
+*.pyc
+
+artifacts/archive/
+artifacts/frames/
+artifacts/checkpoints/
+artifacts/datasets/
+artifacts/**/*.pt
+artifacts/eval/*probe*.json
+artifacts/eval/*num*.json

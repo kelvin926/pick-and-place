@@ -1,0 +1,224 @@
+{
+  "base_curve_points_w": [
+    [
+      -0.6000000238418579,
+      0.0,
+      -1.0499999523162842
+    ],
+    [
+      -0.6000000238418579,
+      -1.850000023841858,
+      -1.0499999523162842
+    ],
+    [
+      4.599999904632568,
+      -1.850000023841858,
+      -1.0499999523162842
+    ],
+    [
+      4.599999904632568,
+      -1.657361388206482,
+      -1.0499999523162842
+    ]
+  ],
+  "base_curve_sample_count": 91,
+  "base_direct_displacement_m": 5.457732677459717,
+  "base_final_pos_w": [
+    4.599999904632568,
+    -1.657361388206482,
+    -1.0499999523162842
+  ],
+  "base_goal_pos_w": [
+    4.599999904632568,
+    -1.657361388206482,
+    -1.0499999523162842
+  ],
+  "base_motion_mode": "kinematic_articulation_root_nonholonomic_turn_drive_turn_collision_checked",
+  "base_segment_drive_yaws_rad": [
+    -1.5707963705062866,
+    0.0,
+    1.5707963705062866
+  ],
+  "base_start_pos_w": [
+    -0.6000000238418579,
+    0.0,
+    -1.0499999523162842
+  ],
+  "base_travel_m": 7.24263858795166,
+  "camera_quality": "qhd_2560x1440_zoomed",
+  "camera_resolution": [
+    2560,
+    1440
+  ],
+  "checkpoint": "E:\\pick-and-place\\artifacts\\checkpoints\\agibot_toy2box_bc_phase.pt",
+  "collision_check_passed": true,
+  "collision_clearance_threshold_m": 0.35,
+  "command_success": true,
+  "controller_done": false,
+  "decor_collision_enabled": false,
+  "docking_pose_w": [
+    4.599999904632568,
+    -1.657361388206482,
+    -1.0499999523162842
+  ],
+  "docking_yaw_rad": 1.5707963705062866,
+  "done_step": 718,
+  "drive_min_table_center_clearance_m": 1.6693851947784424,
+  "final_eef_pos_b": [
+    0.9569257497787476,
+    -0.0016819238662719727,
+    0.6550797820091248
+  ],
+  "final_eef_pos_w": [
+    4.601681709289551,
+    -0.7004355788230896,
+    -0.3949201703071594
+  ],
+  "final_phase": "open",
+  "final_target_pos_b": [
+    0.9573614597320557,
+    -1.1920928955078125e-07,
+    0.559999942779541
+  ],
+  "frames": 360,
+  "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\agibot_toy2box_nonholo_qhd_v2",
+  "min_table_clearance_m": 0.3799999952316284,
+  "object_command_target_error_m": 0.011982172727584839,
+  "object_max_step_m": 0.05000000447034836,
+  "object_motion_mode": "bounded_interpolation_no_instant_snap",
+  "object_name": "toy_truck",
+  "object_pos_w": [
+    4.600678443908691,
+    -0.7001921534538269,
+    -0.47803860902786255
+  ],
+  "object_release_settle_steps": 1,
+  "object_target_error_m": 0.011982172727584839,
+  "phase_log": [
+    {
+      "phase": "approach",
+      "step": 0
+    },
+    {
+      "phase": "descend",
+      "step": 40
+    },
+    {
+      "phase": "close",
+      "step": 103
+    },
+    {
+      "phase": "lift",
+      "step": 121
+    },
+    {
+      "phase": "undock",
+      "step": 155
+    },
+    {
+      "phase": "aisle_drive",
+      "step": 268
+    },
+    {
+      "phase": "dock",
+      "step": 560
+    },
+    {
+      "phase": "transfer",
+      "step": 674
+    },
+    {
+      "phase": "place",
+      "step": 699
+    },
+    {
+      "phase": "open",
+      "step": 718
+    }
+  ],
+  "robot_base_radius_m": 0.45,
+  "rollout_success": true,
+  "route_waypoints_w": [
+    [
+      -0.6000000238418579,
+      0.0,
+      -1.0499999523162842
+    ],
+    [
+      -0.6000000238418579,
+      -1.850000023841858,
+      -1.0499999523162842
+    ],
+    [
+      4.599999904632568,
+      -1.850000023841858,
+      -1.0499999523162842
+    ],
+    [
+      4.599999904632568,
+      -1.657361388206482,
+      -1.0499999523162842
+    ]
+  ],
+  "scene_style": "industrial_factory_warehouse",
+  "source_object_pose_w": [
+    0.3147927522659302,
+    -0.18000000715255737,
+    -0.6499999761581421
+  ],
+  "source_standoff_pose_w": [
+    -0.6000000238418579,
+    0.0,
+    -1.0499999523162842
+  ],
+  "source_table_pos_w": [
+    1.1,
+    0.0,
+    -0.7
+  ],
+  "success": true,
+  "table_aabbs_xy": {
+    "source": {
+      "max": [
+        1.6543766605958854,
+        2.160167252788851
+      ],
+      "min": [
+        0.2347927374234563,
+        -0.827361401289967
+      ]
+    },
+    "target": {
+      "max": [
+        5.354376827488891,
+        2.160167252788851
+      ],
+      "min": [
+        3.9347929043164616,
+        -0.827361401289967
+      ]
+    }
+  },
+  "table_distance_m": 3.700000286102295,
+  "target_pos_w": [
+    4.6,
+    -0.7,
+    -0.49
+  ],
+  "target_table_pos_w": [
+    4.8,
+    0.0,
+    -0.7
+  ],
+  "target_table_scale": [
+    1.8,
+    1.0,
+    0.3
+  ],
+  "task": "Isaac-Place-Toy2Box-Agibot-Right-Arm-RmpFlow-v0",
+  "wheel_like_joints_exposed": [],
+  "final_video_mp4": "E:\\pick-and-place\\artifacts\\videos\\agibot_toy2box_industrial_collisionfree_qhd_nonholonomic.mp4",
+  "final_preview_gif": "E:\\pick-and-place\\artifacts\\videos\\agibot_toy2box_industrial_collisionfree_qhd_nonholonomic.gif",
+  "final_video_mp4_bytes": 11265590,
+  "final_preview_gif_bytes": 13216660
+}

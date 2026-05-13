@@ -1,0 +1,268 @@
+{
+  "base_curve_points_w": [
+    [
+      -0.8249173760414124,
+      0.0,
+      -0.800000011920929
+    ],
+    [
+      -0.8249173760414124,
+      -1.850000023841858,
+      -0.800000011920929
+    ],
+    [
+      4.739999771118164,
+      -1.850000023841858,
+      -0.800000011920929
+    ],
+    [
+      4.739999771118164,
+      -1.5097612142562866,
+      -0.800000011920929
+    ]
+  ],
+  "base_curve_sample_count": 91,
+  "base_direct_displacement_m": 5.766080379486084,
+  "base_final_pos_w": [
+    4.739999771118164,
+    -1.5097612142562866,
+    -0.800000011920929
+  ],
+  "base_goal_pos_w": [
+    4.739999771118164,
+    -1.5097612142562866,
+    -0.800000011920929
+  ],
+  "base_motion_mode": "kinematic_articulation_root_nonholonomic_turn_drive_turn_collision_checked",
+  "base_segment_drive_yaws_rad": [
+    -1.5707963705062866,
+    0.0,
+    1.5707963705062866
+  ],
+  "base_start_pos_w": [
+    -0.8249173760414124,
+    0.0,
+    -0.800000011920929
+  ],
+  "base_travel_m": 7.75515604019165,
+  "camera_quality": "qhd_2560x1440_zoomed",
+  "camera_resolution": [
+    2560,
+    1440
+  ],
+  "checkpoint": "E:\\pick-and-place\\artifacts\\checkpoints\\galbot_cube_bc_phase.pt",
+  "collision_check_passed": true,
+  "collision_clearance_threshold_m": 0.6,
+  "command_success": true,
+  "controller_done": false,
+  "cube_frame_markers_enabled": false,
+  "decor_collision_enabled": false,
+  "docking_pose_w": [
+    4.739999771118164,
+    -1.5097612142562866,
+    -0.800000011920929
+  ],
+  "docking_yaw_rad": 1.5707963705062866,
+  "done_step": 1398,
+  "drive_min_table_center_clearance_m": 1.5109530687332153,
+  "final_eef_pos_b": [
+    4.944272994995117,
+    -0.9795935153961182,
+    0.9999116659164429
+  ],
+  "final_eef_pos_w": [
+    5.719592571258545,
+    3.434512138366699,
+    0.19991165399551392
+  ],
+  "final_phase": "open",
+  "final_target_pos_b": [
+    1.1597611904144287,
+    -1.1920928955078125e-07,
+    0.8202999830245972
+  ],
+  "frames": 700,
+  "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\galbot_cube_single_grasp_warehouse_qhd",
+  "gripper_command_events": [
+    {
+      "command": 1,
+      "phase": "approach",
+      "step": 0
+    },
+    {
+      "command": -1,
+      "phase": "close",
+      "step": 280
+    },
+    {
+      "command": 1,
+      "phase": "open",
+      "step": 1398
+    }
+  ],
+  "gripper_command_transitions": 2,
+  "gripper_pos_max_step": 6.51925802230835e-09,
+  "gripper_pos_range": [
+    -3.725290298461914e-09,
+    3.725290298461914e-09
+  ],
+  "hidden_cube_names": [
+    "cube_1",
+    "cube_2"
+  ],
+  "min_table_clearance_m": 0.6299999952316284,
+  "object_command_quat_w": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "object_command_target_error_m": 0.0,
+  "object_locked_quat_w": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "object_max_step_m": 0.08135361969470978,
+  "object_motion_mode": "bounded_interpolation_no_instant_snap",
+  "object_name": "cube_3",
+  "object_pos_w": [
+    4.739999771118164,
+    -0.3499999940395355,
+    0.0203000009059906
+  ],
+  "object_quat_max_angle_error_deg": 0.0,
+  "object_quat_max_angle_error_rad": 0.0,
+  "object_quat_w": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "object_release_settle_steps": 1,
+  "object_target_error_m": 0.0,
+  "phase_log": [
+    {
+      "phase": "approach",
+      "step": 0
+    },
+    {
+      "phase": "descend",
+      "step": 130
+    },
+    {
+      "phase": "close",
+      "step": 280
+    },
+    {
+      "phase": "lift",
+      "step": 310
+    },
+    {
+      "phase": "undock",
+      "step": 449
+    },
+    {
+      "phase": "aisle_drive",
+      "step": 585
+    },
+    {
+      "phase": "dock",
+      "step": 933
+    },
+    {
+      "phase": "transfer",
+      "step": 1069
+    },
+    {
+      "phase": "place",
+      "step": 1258
+    },
+    {
+      "phase": "open",
+      "step": 1398
+    }
+  ],
+  "robot_base_radius_m": 0.42,
+  "rollout_success": true,
+  "route_waypoints_w": [
+    [
+      -0.8249173760414124,
+      0.0,
+      -0.800000011920929
+    ],
+    [
+      -0.8249173760414124,
+      -1.850000023841858,
+      -0.800000011920929
+    ],
+    [
+      4.739999771118164,
+      -1.850000023841858,
+      -0.800000011920929
+    ],
+    [
+      4.739999771118164,
+      -1.5097612142562866,
+      -0.800000011920929
+    ]
+  ],
+  "scene_style": "isaac_warehouse_props",
+  "source_object_pose_w": [
+    0.3150826096534729,
+    0.0,
+    0.0203000009059906
+  ],
+  "source_standoff_pose_w": [
+    -0.8249173760414124,
+    0.0,
+    -0.800000011920929
+  ],
+  "source_table_pos_w": [
+    1.1,
+    0.0,
+    0.0
+  ],
+  "success": true,
+  "table_aabbs_xy": {
+    "source": {
+      "max": [
+        1.6542656631933004,
+        1.200167314195677
+      ],
+      "min": [
+        0.23508261081412452,
+        -0.4597612589660794
+      ]
+    },
+    "target": {
+      "max": [
+        5.354265830086306,
+        1.200167314195677
+      ],
+      "min": [
+        3.93508277770713,
+        -0.4597612589660794
+      ]
+    }
+  },
+  "table_distance_m": 3.700000286102295,
+  "target_pos_w": [
+    4.74,
+    -0.35,
+    0.0203
+  ],
+  "target_table_pos_w": [
+    4.8,
+    0.0,
+    0.0
+  ],
+  "target_table_scale": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "task": "Isaac-Stack-Cube-Galbot-Left-Arm-Gripper-RmpFlow-v0",
+  "wheel_like_joints_exposed": []
+}

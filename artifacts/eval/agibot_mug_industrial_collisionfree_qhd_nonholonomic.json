@@ -1,0 +1,224 @@
+{
+  "base_curve_points_w": [
+    [
+      -0.6000000238418579,
+      0.0,
+      0.0
+    ],
+    [
+      -0.6000000238418579,
+      -1.850000023841858,
+      0.0
+    ],
+    [
+      4.539999961853027,
+      -1.850000023841858,
+      0.0
+    ],
+    [
+      4.539999961853027,
+      -1.2897613048553467,
+      0.0
+    ]
+  ],
+  "base_curve_sample_count": 91,
+  "base_direct_displacement_m": 5.299347400665283,
+  "base_final_pos_w": [
+    4.539999961853027,
+    -1.2897613048553467,
+    0.0
+  ],
+  "base_goal_pos_w": [
+    4.539999961853027,
+    -1.2897613048553467,
+    0.0
+  ],
+  "base_motion_mode": "kinematic_articulation_root_nonholonomic_turn_drive_turn_collision_checked",
+  "base_segment_drive_yaws_rad": [
+    -1.5707963705062866,
+    0.0,
+    1.5707963705062866
+  ],
+  "base_start_pos_w": [
+    -0.6000000238418579,
+    0.0,
+    0.0
+  ],
+  "base_travel_m": 7.550239086151123,
+  "camera_quality": "qhd_2560x1440_zoomed",
+  "camera_resolution": [
+    2560,
+    1440
+  ],
+  "checkpoint": "E:\\pick-and-place\\artifacts\\checkpoints\\agibot_mug_bc_phase.pt",
+  "collision_check_passed": true,
+  "collision_clearance_threshold_m": 0.35,
+  "command_success": true,
+  "controller_done": false,
+  "decor_collision_enabled": false,
+  "docking_pose_w": [
+    4.539999961853027,
+    -1.2897613048553467,
+    0.0
+  ],
+  "docking_yaw_rad": 1.5707963705062866,
+  "done_step": 703,
+  "drive_min_table_center_clearance_m": 1.315706729888916,
+  "final_eef_pos_b": [
+    0.9304055571556091,
+    -0.0017496347427368164,
+    0.8573455810546875
+  ],
+  "final_eef_pos_w": [
+    4.541749477386475,
+    -0.35935574769973755,
+    0.8573455810546875
+  ],
+  "final_phase": "open",
+  "final_target_pos_b": [
+    0.9297612905502319,
+    -1.1920928955078125e-07,
+    0.7599999904632568
+  ],
+  "frames": 352,
+  "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\agibot_mug_nonholo_qhd_v2",
+  "min_table_clearance_m": 0.3800000548362732,
+  "object_command_target_error_m": 0.02010270208120346,
+  "object_max_step_m": 0.05000006780028343,
+  "object_motion_mode": "bounded_interpolation_no_instant_snap",
+  "object_name": "mug",
+  "object_pos_w": [
+    4.541009902954102,
+    -0.3596290946006775,
+    0.780073881149292
+  ],
+  "object_release_settle_steps": 1,
+  "object_target_error_m": 0.02010270208120346,
+  "phase_log": [
+    {
+      "phase": "approach",
+      "step": 0
+    },
+    {
+      "phase": "descend",
+      "step": 90
+    },
+    {
+      "phase": "close",
+      "step": 106
+    },
+    {
+      "phase": "lift",
+      "step": 124
+    },
+    {
+      "phase": "undock",
+      "step": 153
+    },
+    {
+      "phase": "aisle_drive",
+      "step": 266
+    },
+    {
+      "phase": "dock",
+      "step": 558
+    },
+    {
+      "phase": "transfer",
+      "step": 672
+    },
+    {
+      "phase": "place",
+      "step": 683
+    },
+    {
+      "phase": "open",
+      "step": 703
+    }
+  ],
+  "robot_base_radius_m": 0.45,
+  "rollout_success": true,
+  "route_waypoints_w": [
+    [
+      -0.6000000238418579,
+      0.0,
+      0.0
+    ],
+    [
+      -0.6000000238418579,
+      -1.850000023841858,
+      0.0
+    ],
+    [
+      4.539999961853027,
+      -1.850000023841858,
+      0.0
+    ],
+    [
+      4.539999961853027,
+      -1.2897613048553467,
+      0.0
+    ]
+  ],
+  "scene_style": "industrial_factory_warehouse",
+  "source_object_pose_w": [
+    0.35508260130882263,
+    -0.1599999964237213,
+    0.75
+  ],
+  "source_standoff_pose_w": [
+    -0.6000000238418579,
+    0.0,
+    0.0
+  ],
+  "source_table_pos_w": [
+    1.1,
+    0.0,
+    0.6
+  ],
+  "success": true,
+  "table_aabbs_xy": {
+    "source": {
+      "max": [
+        1.6542656631933004,
+        1.200167314195677
+      ],
+      "min": [
+        0.23508261081412452,
+        -0.4597612589660794
+      ]
+    },
+    "target": {
+      "max": [
+        5.354265830086306,
+        1.200167314195677
+      ],
+      "min": [
+        3.93508277770713,
+        -0.4597612589660794
+      ]
+    }
+  },
+  "table_distance_m": 3.700000286102295,
+  "target_pos_w": [
+    4.54,
+    -0.36,
+    0.76
+  ],
+  "target_table_pos_w": [
+    4.8,
+    0.0,
+    0.6
+  ],
+  "target_table_scale": [
+    1.0,
+    1.0,
+    0.6
+  ],
+  "task": "Isaac-Place-Mug-Agibot-Left-Arm-RmpFlow-v0",
+  "wheel_like_joints_exposed": [],
+  "final_video_mp4": "E:\\pick-and-place\\artifacts\\videos\\agibot_mug_industrial_collisionfree_qhd_nonholonomic.mp4",
+  "final_preview_gif": "E:\\pick-and-place\\artifacts\\videos\\agibot_mug_industrial_collisionfree_qhd_nonholonomic.gif",
+  "final_video_mp4_bytes": 10582667,
+  "final_preview_gif_bytes": 10475924
+}
