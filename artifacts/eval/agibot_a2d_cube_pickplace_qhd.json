@@ -1,8 +1,8 @@
 {
   "attached_offset_b": [
-    -0.020176872611045837,
-    -0.010716494172811508,
-    -0.0015745353884994984
+    -0.01364194881170988,
+    0.005406271666288376,
+    0.017581187188625336
   ],
   "attached_offset_locked": true,
   "attached_pad_offset_b": [
@@ -47,20 +47,20 @@
   "cube_half_height_m": 0.0406,
   "cube_starts_on_table": true,
   "cube_table_height_tolerance_m": 0.008,
-  "done_step": 2548,
+  "done_step": 2539,
   "final_cube_table_height_error_m": 0.0,
   "final_eef_pos_b": [
-    0.8873109817504883,
-    0.0751173347234726,
-    0.590562641620636
+    0.8966093063354492,
+    -0.19512289762496948,
+    0.8828567862510681
   ],
   "final_eef_pos_w": [
-    4.097311019897461,
-    0.0751173347234726,
-    0.590562641620636
+    4.106609344482422,
+    -0.19512289762496948,
+    0.8828567862510681
   ],
-  "final_phase": "retreat",
-  "frames": 638,
+  "final_phase": "done",
+  "frames": 635,
   "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\agibot_a2d_cube_pickplace_qhd_final",
   "grasp_eef_z_offset_m": 0.04,
   "gripper_attach_snap_m": 0.0,
@@ -184,7 +184,7 @@
     {
       "command": 1,
       "phase": "open",
-      "step": 2477
+      "step": 2475
     }
   ],
   "gripper_command_transitions": 2,
@@ -456,47 +456,47 @@
       "step": 450
     },
     {
-      "joint_lift_body": 0.13802775740623474,
+      "joint_lift_body": 0.13802777230739594,
       "phase": "lift_up_carry",
       "step": 460
     },
     {
-      "joint_lift_body": 0.14808905124664307,
+      "joint_lift_body": 0.14808928966522217,
       "phase": "lift_up_carry",
       "step": 470
     },
     {
-      "joint_lift_body": 0.15811195969581604,
+      "joint_lift_body": 0.15811696648597717,
       "phase": "lift_up_carry",
       "step": 480
     },
     {
-      "joint_lift_body": 0.16812175512313843,
+      "joint_lift_body": 0.16812922060489655,
       "phase": "lift_up_carry",
       "step": 490
     },
     {
-      "joint_lift_body": 0.17813022434711456,
-      "phase": "lift_up_carry",
+      "joint_lift_body": 0.1781436651945114,
+      "phase": "hold_carry",
       "step": 500
     },
     {
-      "joint_lift_body": 0.18811823427677155,
+      "joint_lift_body": 0.18815094232559204,
       "phase": "hold_carry",
       "step": 510
     },
     {
-      "joint_lift_body": 0.19810517132282257,
+      "joint_lift_body": 0.19817760586738586,
       "phase": "hold_carry",
       "step": 520
     },
     {
-      "joint_lift_body": 0.2080971747636795,
+      "joint_lift_body": 0.20820274949073792,
       "phase": "hold_carry",
       "step": 530
     },
     {
-      "joint_lift_body": 0.2181023210287094,
+      "joint_lift_body": 0.21822449564933777,
       "phase": "hold_carry",
       "step": 540
     },
@@ -537,7 +537,7 @@
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "hold_carry",
+      "phase": "undock",
       "step": 620
     },
     {
@@ -1437,7 +1437,7 @@
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "transfer_align",
       "step": 2420
     },
     {
@@ -1451,74 +1451,69 @@
       "step": 2440
     },
     {
-      "joint_lift_body": 0.2210129350423813,
+      "joint_lift_body": 0.21700792014598846,
       "phase": "lower_lift_place",
       "step": 2450
     },
     {
-      "joint_lift_body": 0.21103915572166443,
+      "joint_lift_body": 0.20701463520526886,
       "phase": "lower_lift_place",
       "step": 2460
     },
     {
-      "joint_lift_body": 0.20106109976768494,
+      "joint_lift_body": 0.19701987504959106,
       "phase": "lower_lift_place",
       "step": 2470
     },
     {
-      "joint_lift_body": 0.19111181795597076,
+      "joint_lift_body": 0.1899999976158142,
       "phase": "open",
       "step": 2480
     },
     {
-      "joint_lift_body": 0.18124991655349731,
+      "joint_lift_body": 0.1899999976158142,
       "phase": "open",
       "step": 2490
     },
     {
-      "joint_lift_body": 0.17141342163085938,
+      "joint_lift_body": 0.1899999976158142,
       "phase": "open",
       "step": 2500
     },
     {
-      "joint_lift_body": 0.16150599718093872,
+      "joint_lift_body": 0.1899999976158142,
       "phase": "open",
       "step": 2510
     },
     {
-      "joint_lift_body": 0.16351917386054993,
+      "joint_lift_body": 0.19804197549819946,
       "phase": "retreat",
       "step": 2520
     },
     {
-      "joint_lift_body": 0.17351581156253815,
+      "joint_lift_body": 0.20805343985557556,
       "phase": "retreat",
       "step": 2530
-    },
-    {
-      "joint_lift_body": 0.1835043877363205,
-      "phase": "retreat",
-      "step": 2540
     }
   ],
-  "min_carried_gripper_body_clearance_m": 0.25426357984542847,
-  "min_carried_object_body_clearance_m": 0.2496258020401001,
+  "min_carried_gripper_body_clearance_m": 0.15787070989608765,
+  "min_carried_object_body_clearance_m": 0.1536279320716858,
   "min_runtime_table_clearance_m": 0.30508241057395935,
   "min_static_obstacle_clearance_m": 0.30508264899253845,
   "min_table_clearance_m": 0.30508264899253845,
   "object_attachment_mode": "left_gripper_pad_midpoint_root_locked_partial_gripper",
   "object_command_target_error_m": 0.0,
   "object_max_step_from_w": [
-    -0.46262675523757935,
-    -0.883171021938324,
-    0.7703892588615417
+    -0.25548428297042847,
+    -2.298825740814209,
+    0.81375652551651
   ],
-  "object_max_step_m": 0.0761433020234108,
-  "object_max_step_phase": "undock",
+  "object_max_step_m": 0.06980334222316742,
+  "object_max_step_phase": "aisle_drive",
   "object_max_step_to_w": [
-    -0.535670280456543,
-    -0.8683788776397705,
-    0.7859981656074524
+    -0.3208867609500885,
+    -2.3226449489593506,
+    0.8190165162086487
   ],
   "object_name_in_env": "mug",
   "object_pos_w": [
@@ -1562,41 +1557,41 @@
     },
     {
       "phase": "hold_carry",
-      "step": 504
+      "step": 500
     },
     {
       "phase": "undock",
-      "step": 624
+      "step": 620
     },
     {
       "phase": "aisle_drive",
-      "step": 1037
+      "step": 1033
     },
     {
       "phase": "dock",
-      "step": 2009
+      "step": 2005
     },
     {
       "phase": "transfer_align",
-      "step": 2423
+      "step": 2419
     },
     {
       "phase": "lower_lift_place",
-      "step": 2447
+      "step": 2443
     },
     {
       "phase": "open",
-      "step": 2477
+      "step": 2475
     },
     {
       "phase": "retreat",
-      "step": 2515
+      "step": 2513
     }
   ],
   "pick_descend_min_grasp_height_error_m": 0.00012874603271484375,
   "pick_descend_min_xy_error_m": 0.0,
   "pick_descend_reached": true,
-  "post_release_settle_steps": 72,
+  "post_release_settle_steps": 65,
   "post_release_settle_steps_required": 72,
   "preclamp_final_error_m": 0.011983225122094154,
   "preclamp_max_object_step_m": 0.005999956279993057,
@@ -1604,9 +1599,9 @@
   "pregrasp_max_object_motion_m": 0.0,
   "release_cube_table_height_error_m": 0.0,
   "release_pose_w": [
-    4.090350151062012,
-    -0.17951186001300812,
-    0.6494143605232239
+    4.091192245483398,
+    -0.17668071389198303,
+    0.6448910236358643
   ],
   "robot": "Agibot A2D",
   "robot_base_radius_m": 0.42,

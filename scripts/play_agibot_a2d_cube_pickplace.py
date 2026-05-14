@@ -50,7 +50,9 @@ GRASP_EEF_Y_OFFSET_M = -0.055
 GRASP_EEF_Z_OFFSET = 0.040
 APPROACH_EEF_Z_OFFSET = 0.220
 RETREAT_EEF_Z_OFFSET = 0.260
-CARRY_OBJECT_LIFT_M = 0.115
+CARRY_OBJECT_LIFT_M = 0.145
+CARRY_OBJECT_X_B = 0.74
+CARRY_OBJECT_Y_B = -0.14
 AISLE_Y = -1.60
 START_DOCK_X_SHIFT_M = 0.11
 ROBOT_BASE_RADIUS_M = 0.42
@@ -148,8 +150,8 @@ def configure_cube_object(env_cfg) -> None:
 
 
 def set_camera_view(env, env_step_s: float) -> None:
-    eye = torch.tensor([[2.05, -7.25, 2.65]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
-    lookat = torch.tensor([[2.15, -0.35, 0.78]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
+    eye = torch.tensor([[2.92, -8.10, 2.78]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
+    lookat = torch.tensor([[3.05, -0.30, 0.82]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
     env.scene["demo_camera"].set_world_poses_from_view(eye, lookat)
     for _ in range(4):
         env.sim.render()
@@ -375,7 +377,10 @@ class AgibotA2DCubeController:
         self.attached_offset_locked = False
         self.attach_offset_capture_step: int | None = None
         self.carried_eef_b: torch.Tensor | None = None
-        self.carry_object_b = self.object_start_b + self._z(CARRY_OBJECT_LIFT_M)
+        self.carry_object_b = self.object_start_b.clone()
+        self.carry_object_b[:, 0] = CARRY_OBJECT_X_B
+        self.carry_object_b[:, 1] = CARRY_OBJECT_Y_B
+        self.carry_object_b[:, 2:3] = self.object_start_b[:, 2:3] + CARRY_OBJECT_LIFT_M
         self.carry_eef_b = self.eef_for_object(self.carry_object_b)
         self.current_eef_target_b = self.eef_for_object(self.object_start_b, APPROACH_EEF_Z_OFFSET)
 
@@ -445,8 +450,10 @@ class AgibotA2DCubeController:
         return smooth_step(raw)
 
     def pick_lift_object_b(self) -> torch.Tensor:
+        progress = self.pick_lift_progress()
         object_b = self.object_start_b.clone()
-        object_b[:, 2:3] = self.object_start_b[:, 2:3] + CARRY_OBJECT_LIFT_M * self.pick_lift_progress()
+        object_b[:, :2] = self.object_start_b[:, :2] + (self.carry_object_b[:, :2] - self.object_start_b[:, :2]) * progress
+        object_b[:, 2:3] = self.object_start_b[:, 2:3] + CARRY_OBJECT_LIFT_M * progress
         return object_b
 
     def target_lift_object_b(self) -> torch.Tensor:
@@ -628,7 +635,7 @@ class AgibotA2DCubeController:
         if phase in ("lift_down_pick", "descend", "close"):
             return self.lift_low
         if phase in ("lower_lift_place", "open"):
-            return self.lift_low
+            return self.lift_mid
         return self.lift_mid
 
     def phase_target(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float, int, bool, bool]:
