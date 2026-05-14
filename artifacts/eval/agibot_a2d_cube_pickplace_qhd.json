@@ -1,12 +1,15 @@
 {
+  "attach_blend_error_last_m": 0.0,
+  "attach_blend_error_max_m": 0.09192974865436554,
+  "attach_blend_step_m": 0.035,
   "attached_offset_b": [
-    -0.0382268987596035,
-    -0.13436266779899597,
-    0.023613542318344116
+    -0.018858149647712708,
+    -0.06166630983352661,
+    -0.09371563047170639
   ],
   "attached_offset_locked": true,
   "attached_sync_error_last_m": 0.0,
-  "attached_sync_error_max_m": 0.0,
+  "attached_sync_error_max_m": 0.008630121126770973,
   "attached_sync_error_threshold_m": 0.015,
   "base_final_pos_w": [
     3.2100000381469727,
@@ -42,22 +45,22 @@
   "cube_half_height_m": 0.0406,
   "cube_starts_on_table": true,
   "cube_table_height_tolerance_m": 0.008,
-  "done_step": 935,
+  "done_step": 1339,
   "final_cube_table_height_error_m": 0.0,
   "final_eef_pos_b": [
-    1.008094310760498,
-    -0.08546298742294312,
-    0.6076356768608093
+    0.9889249801635742,
+    -0.15781712532043457,
+    0.7249566912651062
   ],
   "final_eef_pos_w": [
-    4.218094348907471,
-    -0.08546298742294312,
-    0.6076356768608093
+    4.198925018310547,
+    -0.15781712532043457,
+    0.7249566912651062
   ],
   "final_phase": "open",
-  "frames": 234,
-  "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\agibot_a2d_cube_pickplace_qhd_final",
-  "grasp_eef_z_offset_m": 0.015,
+  "frames": 335,
+  "frames_dir": "E:\\pick-and-place\\artifacts\\frames\\agibot_a2d_cube_pickplace_qhd_blend_final",
+  "grasp_eef_z_offset_m": 0.04,
   "gripper_command_events": [
     {
       "command": 1,
@@ -67,17 +70,17 @@
     {
       "command": -1,
       "phase": "close",
-      "step": 128
+      "step": 152
     },
     {
       "command": 1,
       "phase": "open",
-      "step": 935
+      "step": 1339
     }
   ],
   "gripper_command_transitions": 2,
-  "gripper_object_sync_error_last_m": 0.0,
-  "gripper_object_sync_error_max_m": 0.0,
+  "gripper_object_sync_error_last_m": 1.7881393432617188e-07,
+  "gripper_object_sync_error_max_m": 0.008630109950900078,
   "initial_eef_pos_b": [
     0.6390627026557922,
     0.07425807416439056,
@@ -142,33 +145,33 @@
       "step": 90
     },
     {
-      "joint_lift_body": 0.19995830953121185,
-      "phase": "lift_down_pick",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "approach",
       "step": 100
     },
     {
-      "joint_lift_body": 0.17492491006851196,
-      "phase": "lift_down_pick",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "approach",
       "step": 110
     },
     {
-      "joint_lift_body": 0.14989565312862396,
+      "joint_lift_body": 0.21249568462371826,
       "phase": "lift_down_pick",
       "step": 120
     },
     {
-      "joint_lift_body": 0.13500000536441803,
-      "phase": "close",
+      "joint_lift_body": 0.1874937117099762,
+      "phase": "lift_down_pick",
       "step": 130
     },
     {
-      "joint_lift_body": 0.13500000536441803,
-      "phase": "close",
+      "joint_lift_body": 0.16250550746917725,
+      "phase": "lift_down_pick",
       "step": 140
     },
     {
-      "joint_lift_body": 0.13500000536441803,
-      "phase": "close",
+      "joint_lift_body": 0.13752947747707367,
+      "phase": "descend",
       "step": 150
     },
     {
@@ -177,38 +180,38 @@
       "step": 160
     },
     {
-      "joint_lift_body": 0.1375049352645874,
-      "phase": "lift_up_carry",
+      "joint_lift_body": 0.13500000536441803,
+      "phase": "close",
       "step": 170
     },
     {
-      "joint_lift_body": 0.16252486407756805,
-      "phase": "lift_up_carry",
+      "joint_lift_body": 0.13500000536441803,
+      "phase": "close",
       "step": 180
     },
     {
-      "joint_lift_body": 0.18752451241016388,
-      "phase": "lift_up_carry",
+      "joint_lift_body": 0.13500000536441803,
+      "phase": "close",
       "step": 190
     },
     {
-      "joint_lift_body": 0.21253421902656555,
-      "phase": "hold_carry",
+      "joint_lift_body": 0.15248826146125793,
+      "phase": "lift_up_carry",
       "step": 200
     },
     {
-      "joint_lift_body": 0.22499999403953552,
-      "phase": "hold_carry",
+      "joint_lift_body": 0.17748872935771942,
+      "phase": "lift_up_carry",
       "step": 210
     },
     {
-      "joint_lift_body": 0.22499999403953552,
-      "phase": "undock",
+      "joint_lift_body": 0.20248353481292725,
+      "phase": "hold_carry",
       "step": 220
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "undock",
+      "phase": "hold_carry",
       "step": 230
     },
     {
@@ -263,57 +266,57 @@
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 340
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 350
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 360
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 370
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 380
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 390
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 400
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 410
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 420
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 430
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "aisle_drive",
+      "phase": "undock",
       "step": 440
     },
     {
@@ -403,187 +406,387 @@
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 620
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 630
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 640
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 650
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 660
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 670
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 680
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 690
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 700
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 710
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 720
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "dock",
+      "phase": "aisle_drive",
       "step": 730
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "transfer_align",
+      "phase": "aisle_drive",
       "step": 740
     },
     {
       "joint_lift_body": 0.22499999403953552,
-      "phase": "transfer_align",
+      "phase": "aisle_drive",
       "step": 750
     },
     {
-      "joint_lift_body": 0.21249805390834808,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 760
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 770
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 780
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 790
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 800
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 810
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 820
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 830
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 840
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 850
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 860
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 870
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 880
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 890
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 900
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 910
     },
     {
-      "joint_lift_body": 0.1899999976158142,
-      "phase": "lower_lift_place",
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "aisle_drive",
       "step": 920
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 930
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 940
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 950
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 960
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 970
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 980
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 990
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1000
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1010
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1020
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1030
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1040
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1050
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1060
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1070
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1080
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1090
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1100
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1110
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1120
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "dock",
+      "step": 1130
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "transfer_align",
+      "step": 1140
+    },
+    {
+      "joint_lift_body": 0.22499999403953552,
+      "phase": "transfer_align",
+      "step": 1150
+    },
+    {
+      "joint_lift_body": 0.22250181436538696,
+      "phase": "lower_lift_place",
+      "step": 1160
+    },
+    {
+      "joint_lift_body": 0.19750791788101196,
+      "phase": "lower_lift_place",
+      "step": 1170
     },
     {
       "joint_lift_body": 0.1899999976158142,
       "phase": "lower_lift_place",
-      "step": 930
+      "step": 1180
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1190
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1200
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1210
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1220
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1230
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1240
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1250
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1260
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1270
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1280
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1290
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1300
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1310
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1320
+    },
+    {
+      "joint_lift_body": 0.1899999976158142,
+      "phase": "lower_lift_place",
+      "step": 1330
     },
     {
       "joint_lift_body": 0.1899999976158142,
       "phase": "open",
-      "step": 935
+      "step": 1339
     }
   ],
-  "min_carried_gripper_body_clearance_m": 0.42056065797805786,
-  "min_carried_object_body_clearance_m": 0.3880540728569031,
+  "min_carried_gripper_body_clearance_m": 0.38951075077056885,
+  "min_carried_object_body_clearance_m": 0.3251346945762634,
   "min_runtime_table_clearance_m": 0.30508241057395935,
   "min_static_obstacle_clearance_m": 0.30508264899253845,
   "min_table_clearance_m": 0.30508264899253845,
   "object_command_target_error_m": 0.0,
   "object_max_step_from_w": [
-    4.051347732543945,
-    0.5302921533584595,
-    0.7810091972351074
+    0.13828420639038086,
+    -0.718330979347229,
+    0.887407660484314
   ],
-  "object_max_step_m": 0.09737197309732437,
-  "object_max_step_phase": "dock",
+  "object_max_step_m": 0.048442188650369644,
+  "object_max_step_phase": "undock",
   "object_max_step_to_w": [
-    4.0991716384887695,
-    0.44547367095947266,
-    0.7810096740722656
+    0.11018604040145874,
+    -0.7527063488960266,
+    0.8680305480957031
   ],
   "object_name_in_env": "mug",
   "object_pos_w": [
@@ -611,58 +814,58 @@
     },
     {
       "phase": "lift_down_pick",
-      "step": 91
+      "step": 116
     },
     {
       "phase": "descend",
-      "step": 125
+      "step": 150
     },
     {
       "phase": "close",
-      "step": 128
+      "step": 152
     },
     {
       "phase": "lift_up_carry",
-      "step": 170
+      "step": 194
     },
     {
       "phase": "hold_carry",
-      "step": 193
+      "step": 217
     },
     {
       "phase": "undock",
-      "step": 213
+      "step": 237
     },
     {
       "phase": "aisle_drive",
-      "step": 332
+      "step": 443
     },
     {
       "phase": "dock",
-      "step": 612
+      "step": 929
     },
     {
       "phase": "transfer_align",
-      "step": 732
+      "step": 1136
     },
     {
       "phase": "lower_lift_place",
-      "step": 756
+      "step": 1160
     },
     {
       "phase": "open",
-      "step": 935
+      "step": 1339
     }
   ],
-  "pick_descend_min_grasp_height_error_m": 0.0,
-  "pick_descend_min_xy_error_m": 0.0,
+  "pick_descend_min_grasp_height_error_m": 3.30805778503418e-05,
+  "pick_descend_min_xy_error_m": 0.010085135698318481,
   "pick_descend_reached": true,
   "pregrasp_max_object_motion_m": 0.0,
   "release_cube_table_height_error_m": 0.0,
   "release_pose_w": [
-    4.1798810958862305,
-    -0.21984770894050598,
-    0.6312770843505859
+    4.180057048797607,
+    -0.21946951746940613,
+    0.6312508583068848
   ],
   "robot": "Agibot A2D",
   "robot_base_radius_m": 0.42,

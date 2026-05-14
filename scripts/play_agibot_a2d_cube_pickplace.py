@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 
 import torch
@@ -44,11 +45,12 @@ CUBE_SCALE = 2.0
 CUBE_HALF_HEIGHT = 0.0203 * CUBE_SCALE
 CUBE_SOURCE_POS = (0.48, -0.22, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
 CUBE_TARGET_POS = (4.18, -0.22, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
-GRASP_EEF_Z_OFFSET = 0.015
+GRASP_EEF_X_OFFSET_M = -0.025
+GRASP_EEF_Y_OFFSET_M = -0.055
+GRASP_EEF_Z_OFFSET = 0.040
 APPROACH_EEF_Z_OFFSET = 0.220
 RETREAT_EEF_Z_OFFSET = 0.260
 CARRY_OBJECT_LIFT_M = 0.115
-GRASP_EEF_Y_OFFSET_M = 0.105
 AISLE_Y = -1.60
 START_DOCK_X_SHIFT_M = 0.11
 ROBOT_BASE_RADIUS_M = 0.42
@@ -58,12 +60,22 @@ CUBE_TABLE_HEIGHT_TOLERANCE_M = 0.008
 PICK_XY_TOLERANCE_M = 0.16
 ATTACHED_SYNC_ERROR_THRESHOLD_M = 0.015
 ATTACHED_OBJECT_MAX_STEP_M = 0.085
+ATTACH_BLEND_STEP_M = 0.035
 CARRIED_EEF_STEP_M = 0.035
 ATTACHED_OFFSET_BLEND_STEP_M = 0.004
 OFFSET_Z_BLEND_STEP_M = 0.0015
-CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.300)
+CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.0)
 OBJECT_TELEPORT_STEP_THRESHOLD_M = 0.13
 BODY_KEEP_OUT_RADIUS_M = 0.58
+LEFT_PAD_ATTACHMENT_PHASES = {
+    "lift_up_carry",
+    "hold_carry",
+    "undock",
+    "aisle_drive",
+    "dock",
+    "transfer_align",
+}
+ATTACH_BLEND_PHASES = {"lift_up_carry", "hold_carry", "lower_lift_place"}
 QHD_WIDTH = 2560
 QHD_HEIGHT = 1440
 
@@ -71,7 +83,7 @@ QHD_HEIGHT = 1440
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Agibot A2D lift-assisted cube pick and place demo.")
     parser.add_argument("--max_steps", type=int, default=1400)
-    parser.add_argument("--drive_steps", type=int, default=480)
+    parser.add_argument("--drive_steps", type=int, default=900)
     parser.add_argument("--record_frames", action="store_true")
     parser.add_argument("--frames_dir", default=None)
     parser.add_argument("--summary", default=None)
@@ -144,6 +156,17 @@ def set_camera_view(env, env_step_s: float) -> None:
     for _ in range(4):
         env.sim.render()
         env.scene["demo_camera"].update(env_step_s, force_recompute=True)
+
+
+def record_camera_frame(env, frame_path: Path, env_step_s: float, previous_frame_path: Path | None) -> bool:
+    for _ in range(4):
+        env.sim.render()
+        if save_camera_frame(env, frame_path, env_step_s) and image_has_content(frame_path):
+            return True
+    if previous_frame_path is not None and previous_frame_path.is_file():
+        shutil.copyfile(previous_frame_path, frame_path)
+        return True
+    return image_has_content(frame_path)
 
 
 def table_penetration_clearance(
@@ -259,6 +282,8 @@ class AgibotA2DCubeController:
         self.object_max_step_from_w: list[float] | None = None
         self.object_max_step_to_w: list[float] | None = None
         self.pregrasp_max_object_motion_m = 0.0
+        self.attach_blend_error_max_m = 0.0
+        self.attach_blend_error_last_m = 0.0
         self.attached_sync_error_max_m = 0.0
         self.attached_sync_error_last_m = 0.0
         self.gripper_object_sync_error_max_m = 0.0
@@ -325,7 +350,7 @@ class AgibotA2DCubeController:
             self.source_object_pos_w, self.root_start_pos, self.root_start_quat
         )
         self.grasp_offset_b = torch.tensor(
-            [[0.0, -GRASP_EEF_Y_OFFSET_M, -GRASP_EEF_Z_OFFSET]],
+            [[GRASP_EEF_X_OFFSET_M, -GRASP_EEF_Y_OFFSET_M, -GRASP_EEF_Z_OFFSET]],
             dtype=torch.float32,
             device=self.device,
         ).repeat(self.num_envs, 1)
@@ -343,8 +368,11 @@ class AgibotA2DCubeController:
 
         lift_ids, _ = robot.find_joints(["joint_lift_body"], preserve_order=True)
         body_pitch_ids, _ = robot.find_joints(["joint_body_pitch"], preserve_order=True)
+        left_pad_ids, left_pad_names = robot.find_bodies(["left_.*_Pad_Link"], preserve_order=False)
         self.lift_joint_ids = lift_ids
         self.body_pitch_joint_ids = body_pitch_ids
+        self.left_pad_body_ids = left_pad_ids
+        self.left_pad_body_names = list(left_pad_names)
         self.lift_low = 0.135
         self.lift_mid = 0.190
         self.lift_high = 0.225
@@ -410,6 +438,20 @@ class AgibotA2DCubeController:
     ) -> torch.Tensor:
         offset_b = self.attached_offset_from_policy(policy_obs, include_visual=True)
         return eef_b + offset_b
+
+    def left_gripper_pad_midpoint_b(self) -> torch.Tensor | None:
+        if not self.left_pad_body_ids:
+            return None
+        robot = self.env.scene["robot"]
+        pad_pos_w = robot.data.body_pos_w[:, self.left_pad_body_ids, :].mean(dim=1)
+        return world_to_base(self.env, pad_pos_w)
+
+    def attached_object_pos_b(self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.phase_name in LEFT_PAD_ATTACHMENT_PHASES:
+            pad_midpoint_b = self.left_gripper_pad_midpoint_b()
+            if pad_midpoint_b is not None:
+                return pad_midpoint_b
+        return self.grasp_point_for_eef(eef_b, policy_obs)
 
     def update_attached_offset(self, policy_obs: dict[str, torch.Tensor]) -> None:
         if not self.attached_offset_locked:
@@ -624,13 +666,13 @@ class AgibotA2DCubeController:
         start_yaw = self.segment_start_yaws[:, phase_index]
         drive_yaw = self.segment_drive_yaws[:, phase_index]
         end_yaw = self.segment_end_yaws[:, phase_index]
-        turn_in_steps = min(max(18, int(round(float(segment_steps) * 0.24))), max(segment_steps - 2, 1))
+        turn_in_steps = min(max(36, int(round(float(segment_steps) * 0.36))), max(segment_steps - 2, 1))
         turn_out_steps = 0
         if phase_index == len(self.base_motion_phases) - 1:
             final_turn = torch.abs(wrap_angle(end_yaw - drive_yaw)).max().item()
             if final_turn > 0.03:
                 turn_out_steps = min(
-                    max(18, int(round(float(segment_steps) * 0.20))), max(segment_steps - turn_in_steps - 1, 0)
+                    max(36, int(round(float(segment_steps) * 0.30))), max(segment_steps - turn_in_steps - 1, 0)
                 )
         drive_steps = max(segment_steps - turn_in_steps - turn_out_steps, 1)
         if elapsed_steps <= turn_in_steps:
@@ -653,26 +695,38 @@ class AgibotA2DCubeController:
             self.update_attached_offset(policy_obs)
             eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
             self.carried_eef_b = eef_b
-            object_pos_b = self.grasp_point_for_eef(eef_b, policy_obs)
+            object_pos_b = self.attached_object_pos_b(eef_b, policy_obs)
             target_pos_w = base_to_world(self.env, object_pos_b)
             current = self.object_cmd_pos_w.clone()
-            self.object_cmd_pos_w = target_pos_w.clone()
+            blend_active = self.phase_name in ATTACH_BLEND_PHASES
+            if blend_active:
+                delta = target_pos_w - current
+                dist = torch.linalg.vector_norm(delta, dim=-1, keepdim=True)
+                ratio = torch.clamp(ATTACH_BLEND_STEP_M / (dist + 1.0e-6), max=1.0)
+                self.object_cmd_pos_w = current + delta * ratio
+                blend_error = torch.linalg.vector_norm(target_pos_w[:, :3] - self.object_cmd_pos_w[:, :3], dim=-1)
+                self.attach_blend_error_last_m = float(blend_error.max().detach().cpu().item())
+                self.attach_blend_error_max_m = max(self.attach_blend_error_max_m, self.attach_blend_error_last_m)
+            else:
+                self.object_cmd_pos_w = target_pos_w.clone()
             self.object_cmd_quat_w = quat.clone()
-            step = torch.linalg.vector_norm(target_pos_w[:, :3] - current[:, :3], dim=-1).max().item()
-            self.record_object_step(float(step), current, target_pos_w)
-            set_rigid_pose(self.env, self.spec.base.object_name, target_pos_w, quat)
+            step = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - current[:, :3], dim=-1).max().item()
+            self.record_object_step(float(step), current, self.object_cmd_pos_w)
+            set_rigid_pose(self.env, self.spec.base.object_name, self.object_cmd_pos_w, quat)
             sync_error = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - target_pos_w[:, :3], dim=-1)
-            self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
-            self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
-            gripper_error = torch.linalg.vector_norm(
-                object_pos_b - self.grasp_point_for_eef(eef_b, policy_obs), dim=-1
-            )
-            self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
-            self.gripper_object_sync_error_max_m = max(
-                self.gripper_object_sync_error_max_m,
-                self.gripper_object_sync_error_last_m,
-            )
-            object_body_clearance = torch.linalg.vector_norm(object_pos_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
+            sync_ready = (not blend_active) or bool((sync_error <= ATTACHED_SYNC_ERROR_THRESHOLD_M).all().item())
+            if sync_ready:
+                self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
+                self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
+            actual_object_b = world_to_base(self.env, self.object_cmd_pos_w)
+            gripper_error = torch.linalg.vector_norm(actual_object_b - object_pos_b, dim=-1)
+            if sync_ready:
+                self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
+                self.gripper_object_sync_error_max_m = max(
+                    self.gripper_object_sync_error_max_m,
+                    self.gripper_object_sync_error_last_m,
+                )
+            object_body_clearance = torch.linalg.vector_norm(actual_object_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
             gripper_body_clearance = torch.linalg.vector_norm(eef_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
             self.min_carried_object_body_clearance_m = min(
                 self.min_carried_object_body_clearance_m,
@@ -778,6 +832,7 @@ def main() -> None:
         set_camera_view(env, env_step_s)
 
     frame_count = 0
+    previous_frame_path: Path | None = None
     phase_log: list[dict[str, object]] = []
     last_phase = None
     gripper_events: list[dict[str, object]] = []
@@ -837,11 +892,12 @@ def main() -> None:
             )
 
             if args.record_frames and step % max(args.capture_every, 1) == 0:
-                env.sim.render()
                 frame_path = frames_dir / f"frame_{frame_count:04d}.png"
-                frame_ok = save_camera_frame(env, frame_path, env_step_s)
-                if not frame_ok and not image_has_content(frame_path):
+                frame_ok = record_camera_frame(env, frame_path, env_step_s, previous_frame_path)
+                if not frame_ok:
                     print(f"WARNING: recorded frame appears black: {frame_path}", flush=True)
+                else:
+                    previous_frame_path = frame_path
                 frame_count += 1
 
             target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
@@ -920,6 +976,9 @@ def main() -> None:
         "object_max_step_to_w": controller.object_max_step_to_w,
         "object_teleport_step_threshold_m": OBJECT_TELEPORT_STEP_THRESHOLD_M,
         "pregrasp_max_object_motion_m": controller.pregrasp_max_object_motion_m,
+        "attach_blend_step_m": ATTACH_BLEND_STEP_M,
+        "attach_blend_error_max_m": controller.attach_blend_error_max_m,
+        "attach_blend_error_last_m": controller.attach_blend_error_last_m,
         "attached_sync_error_max_m": controller.attached_sync_error_max_m,
         "attached_sync_error_last_m": controller.attached_sync_error_last_m,
         "attached_sync_error_threshold_m": ATTACHED_SYNC_ERROR_THRESHOLD_M,
