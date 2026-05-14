@@ -43,8 +43,8 @@ TARGET_TABLE_POS = (4.80, 0.0, 0.60)
 TABLE_SCALE = (1.0, 1.0, 0.60)
 CUBE_SCALE = 2.0
 CUBE_HALF_HEIGHT = 0.0203 * CUBE_SCALE
-CUBE_SOURCE_POS = (0.48, -0.22, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
-CUBE_TARGET_POS = (4.18, -0.22, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+CUBE_SOURCE_POS = (0.39, -0.18, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+CUBE_TARGET_POS = (4.09, -0.18, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
 GRASP_EEF_X_OFFSET_M = -0.025
 GRASP_EEF_Y_OFFSET_M = -0.055
 GRASP_EEF_Z_OFFSET = 0.040
@@ -61,12 +61,17 @@ PICK_XY_TOLERANCE_M = 0.16
 ATTACHED_SYNC_ERROR_THRESHOLD_M = 0.015
 ATTACHED_OBJECT_MAX_STEP_M = 0.085
 CARRIED_EEF_STEP_M = 0.035
+PRECLAMP_OBJECT_STEP_M = 0.006
 ATTACHED_OFFSET_BLEND_STEP_M = 0.004
 OFFSET_Z_BLEND_STEP_M = 0.0015
 CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.0)
 OBJECT_TELEPORT_STEP_THRESHOLD_M = 0.13
 BODY_KEEP_OUT_RADIUS_M = 0.58
 POST_RELEASE_SETTLE_STEPS = 72
+GRIPPER_CAPTURE_ERROR_THRESHOLD_M = 0.035
+GRIPPER_CENTERED_GRASP_OFFSET_B = (0.0, 0.0, 0.028)
+GRIPPER_OPEN_JOINT_POS = 0.994
+GRIPPER_CUBE_HOLD_JOINT_POS = 0.18
 LIFT_DRIVEN_PICK_PHASES = {"lift_up_carry", "hold_carry"}
 LIFT_DRIVEN_PLACE_PHASES = {"lower_lift_place", "open"}
 QHD_WIDTH = 2560
@@ -75,8 +80,8 @@ QHD_HEIGHT = 1440
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Agibot A2D lift-assisted cube pick and place demo.")
-    parser.add_argument("--max_steps", type=int, default=2200)
-    parser.add_argument("--drive_steps", type=int, default=1400)
+    parser.add_argument("--max_steps", type=int, default=3400)
+    parser.add_argument("--drive_steps", type=int, default=1800)
     parser.add_argument("--record_frames", action="store_true")
     parser.add_argument("--frames_dir", default=None)
     parser.add_argument("--summary", default=None)
@@ -279,6 +284,17 @@ class AgibotA2DCubeController:
         self.attached_sync_error_last_m = 0.0
         self.gripper_object_sync_error_max_m = 0.0
         self.gripper_object_sync_error_last_m = 0.0
+        self.preclamp_max_object_step_m = 0.0
+        self.preclamp_final_error_m = float("inf")
+        self.gripper_capture_error_m = float("inf")
+        self.gripper_capture_offset_b: list[float] | None = None
+        self.gripper_capture_anchor_w: list[float] | None = None
+        self.gripper_capture_anchor_quat_w: list[float] | None = None
+        self.gripper_capture_center_w: list[float] | None = None
+        self.gripper_capture_pad_positions_w: list[list[float]] | None = None
+        self.gripper_capture_pad_gap_m: float | None = None
+        self.gripper_capture_body_positions_w: dict[str, list[float]] | None = None
+        self.gripper_attach_snap_m = float("inf")
         self.min_carried_object_body_clearance_m = float("inf")
         self.min_carried_gripper_body_clearance_m = float("inf")
         self.release_settle_steps = 0
@@ -350,6 +366,11 @@ class AgibotA2DCubeController:
         self.attached_offset_goal_b: torch.Tensor | None = None
         self.attached_offset_eef_b: torch.Tensor | None = None
         self.attached_pad_offset_b: torch.Tensor | None = None
+        self.centered_grasp_offset_b = torch.tensor(
+            [GRIPPER_CENTERED_GRASP_OFFSET_B],
+            dtype=torch.float32,
+            device=self.device,
+        ).repeat(self.num_envs, 1)
         self.attached_visual_offset_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.attached_offset_locked = False
         self.attach_offset_capture_step: int | None = None
@@ -360,11 +381,23 @@ class AgibotA2DCubeController:
 
         lift_ids, _ = robot.find_joints(["joint_lift_body"], preserve_order=True)
         body_pitch_ids, _ = robot.find_joints(["joint_body_pitch"], preserve_order=True)
+        gripper_hold_ids, gripper_hold_names = robot.find_joints(["left_hand_joint1"], preserve_order=False)
+        gripper_center_ids, gripper_center_names = robot.find_bodies(["gripper_center"], preserve_order=False)
         left_pad_ids, left_pad_names = robot.find_bodies(["left_.*_Pad_Link"], preserve_order=False)
+        gripper_probe_ids, gripper_probe_names = robot.find_bodies(
+            ["left_base_link", "left_.*_Link", "gripper_center"],
+            preserve_order=False,
+        )
         self.lift_joint_ids = lift_ids
         self.body_pitch_joint_ids = body_pitch_ids
+        self.gripper_hold_joint_ids = gripper_hold_ids
+        self.gripper_hold_joint_names = list(gripper_hold_names)
+        self.gripper_center_body_ids = gripper_center_ids
+        self.gripper_center_body_names = list(gripper_center_names)
         self.left_pad_body_ids = left_pad_ids
         self.left_pad_body_names = list(left_pad_names)
+        self.gripper_probe_body_ids = gripper_probe_ids
+        self.gripper_probe_body_names = list(gripper_probe_names)
         self.lift_low = 0.135
         self.lift_mid = 0.190
         self.lift_high = 0.225
@@ -458,6 +491,31 @@ class AgibotA2DCubeController:
         current_object_b = self.attached_object_pos_b(eef_b, policy_obs)
         return eef_b + (object_b - current_object_b)
 
+    def eef_for_gripper_anchor(
+        self,
+        anchor_target_b: torch.Tensor,
+        policy_obs: dict[str, torch.Tensor],
+        z_offset: float | None = None,
+    ) -> torch.Tensor:
+        target = anchor_target_b.clone()
+        if z_offset is not None:
+            target[:, 2] = anchor_target_b[:, 2] + z_offset
+        eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3)
+        current_anchor_b = self.gripper_anchor_b(policy_obs)
+        return eef_b + (target - current_anchor_b)
+
+    def eef_for_centered_grasp(
+        self,
+        object_b: torch.Tensor,
+        policy_obs: dict[str, torch.Tensor],
+        z_offset: float | None = None,
+    ) -> torch.Tensor:
+        target_object_b = object_b.clone()
+        if z_offset is not None:
+            target_object_b[:, 2] = object_b[:, 2] + z_offset
+        anchor_target_b = target_object_b - self.centered_grasp_offset_b
+        return self.eef_for_gripper_anchor(anchor_target_b, policy_obs)
+
     def grasp_point_for_eef(
         self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor] | None = None
     ) -> torch.Tensor:
@@ -465,22 +523,80 @@ class AgibotA2DCubeController:
         return eef_b + offset_b
 
     def left_gripper_pad_midpoint_b(self) -> torch.Tensor | None:
+        pad_pos_w = self.left_gripper_pad_midpoint_w()
+        if pad_pos_w is None:
+            return None
+        return world_to_base(self.env, pad_pos_w)
+
+    def left_gripper_pad_midpoint_w(self) -> torch.Tensor | None:
         if not self.left_pad_body_ids:
             return None
         robot = self.env.scene["robot"]
-        pad_pos_w = robot.data.body_pos_w[:, self.left_pad_body_ids, :].mean(dim=1)
-        return world_to_base(self.env, pad_pos_w)
+        return robot.data.body_pos_w[:, self.left_pad_body_ids, :].mean(dim=1)
+
+    def left_gripper_center_b(self) -> torch.Tensor | None:
+        center_pos_w = self.left_gripper_center_w()
+        if center_pos_w is None:
+            return None
+        return world_to_base(self.env, center_pos_w)
+
+    def left_gripper_center_w(self) -> torch.Tensor | None:
+        if not self.gripper_center_body_ids:
+            return None
+        robot = self.env.scene["robot"]
+        return robot.data.body_pos_w[:, self.gripper_center_body_ids, :].mean(dim=1)
+
+    def gripper_anchor_w(self) -> torch.Tensor | None:
+        pad_midpoint_w = self.left_gripper_pad_midpoint_w()
+        if pad_midpoint_w is not None:
+            return pad_midpoint_w
+        return self.left_gripper_center_w()
+
+    def gripper_anchor_quat_w(self) -> torch.Tensor:
+        robot = self.env.scene["robot"]
+        if self.gripper_center_body_ids:
+            quat_w = robot.data.body_quat_w[:, self.gripper_center_body_ids[0], :]
+        elif self.left_pad_body_ids:
+            quat_w = robot.data.body_quat_w[:, self.left_pad_body_ids[0], :]
+        else:
+            quat_w = robot.data.root_quat_w
+        return quat_w / torch.linalg.vector_norm(quat_w, dim=-1, keepdim=True).clamp_min(1.0e-6)
 
     def gripper_anchor_b(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
-        pad_midpoint_b = self.left_gripper_pad_midpoint_b()
-        if pad_midpoint_b is not None:
-            return pad_midpoint_b
+        anchor_w = self.gripper_anchor_w()
+        if anchor_w is not None:
+            return world_to_base(self.env, anchor_w)
         return policy_obs["eef_pos"].reshape(self.num_envs, 3)
 
     def attached_object_pos_b(self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
         if self.attached_pad_offset_b is not None:
             return self.gripper_anchor_b(policy_obs) + self.attached_pad_offset_b
         return self.grasp_point_for_eef(eef_b, policy_obs)
+
+    def gripper_offset_to_world(self, offset_b: torch.Tensor) -> torch.Tensor:
+        import isaaclab.utils.math as math_utils
+
+        robot = self.env.scene["robot"]
+        return math_utils.quat_apply(robot.data.root_quat_w, offset_b)
+
+    def gripper_local_offset_to_world(self, offset_local: torch.Tensor) -> torch.Tensor:
+        import isaaclab.utils.math as math_utils
+
+        return math_utils.quat_apply(self.gripper_anchor_quat_w(), offset_local)
+
+    def attached_object_pos_w(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        anchor_w = self.gripper_anchor_w()
+        if anchor_w is not None and self.attached_pad_offset_b is not None:
+            return anchor_w + self.gripper_offset_to_world(self.attached_pad_offset_b)
+        eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3)
+        return base_to_world(self.env, self.attached_object_pos_b(eef_b, policy_obs))
+
+    def centered_grasp_object_pos_w(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        anchor_w = self.gripper_anchor_w()
+        if anchor_w is not None:
+            return anchor_w + self.gripper_offset_to_world(self.centered_grasp_offset_b)
+        anchor_b = self.gripper_anchor_b(policy_obs)
+        return base_to_world(self.env, anchor_b + self.centered_grasp_offset_b)
 
     def update_attached_offset(self, policy_obs: dict[str, torch.Tensor]) -> None:
         if not self.attached_offset_locked:
@@ -512,7 +628,7 @@ class AgibotA2DCubeController:
         if phase in ("lift_down_pick", "descend", "close"):
             return self.lift_low
         if phase in ("lower_lift_place", "open"):
-            return self.lift_mid
+            return self.lift_low
         return self.lift_mid
 
     def phase_target(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float, int, bool, bool]:
@@ -520,13 +636,13 @@ class AgibotA2DCubeController:
         close_cmd = -1.0
         phase = self.phase_name
         if phase == "approach":
-            return self.eef_for_object(self.object_start_b, APPROACH_EEF_Z_OFFSET), open_cmd, 0, False, False
+            return self.eef_for_centered_grasp(self.object_start_b, policy_obs, APPROACH_EEF_Z_OFFSET), open_cmd, 0, False, False
         if phase == "lift_down_pick":
-            return self.eef_for_object(self.object_start_b, 0.150), open_cmd, 105, False, False
+            return self.eef_for_centered_grasp(self.object_start_b, policy_obs, 0.150), open_cmd, 105, False, False
         if phase == "descend":
-            return self.eef_for_object(self.object_start_b), open_cmd, 0, False, False
+            return self.eef_for_centered_grasp(self.object_start_b, policy_obs), open_cmd, 0, False, False
         if phase == "close":
-            return self.eef_for_object(self.object_start_b), close_cmd, 42, True, False
+            return self.eef_for_centered_grasp(self.object_start_b, policy_obs), close_cmd, 120, True, False
         if phase == "lift_up_carry":
             return self.eef_for_attached_object(self.pick_lift_object_b(), policy_obs), close_cmd, 0, True, False
         if phase == "hold_carry":
@@ -559,6 +675,26 @@ class AgibotA2DCubeController:
         self.lift_max = max(self.lift_max, value)
         if step % 10 == 0 or self.phase_step_count == 0:
             self.lift_trace.append({"step": step, "phase": self.phase_name, "joint_lift_body": value})
+
+    def command_gripper_aperture(self) -> None:
+        if not self.gripper_hold_joint_ids:
+            return
+        if self.phase_name in ("close", "lift_up_carry", "hold_carry", "undock", "aisle_drive", "dock", "transfer_align", "lower_lift_place"):
+            target_value = GRIPPER_CUBE_HOLD_JOINT_POS
+        elif self.attached:
+            target_value = GRIPPER_CUBE_HOLD_JOINT_POS
+        else:
+            return
+        robot = self.env.scene["robot"]
+        target = torch.full(
+            (self.num_envs, len(self.gripper_hold_joint_ids)),
+            target_value,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        zero_velocity = torch.zeros_like(target)
+        robot.write_joint_state_to_sim(target, zero_velocity, joint_ids=self.gripper_hold_joint_ids)
+        robot.set_joint_position_target(target, joint_ids=self.gripper_hold_joint_ids)
 
     def act(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, str]:
         self.update_attached_offset(policy_obs)
@@ -633,8 +769,8 @@ class AgibotA2DCubeController:
             "descend": 170,
             "lift_up_carry": 145,
             "hold_carry": 150,
-            "transfer_align": 90,
-            "lower_lift_place": 240,
+            "transfer_align": 130,
+            "lower_lift_place": 420,
             "retreat": 110,
         }
         if self.phase_name in max_steps and self.phase_step_count >= max_steps[self.phase_name]:
@@ -647,8 +783,41 @@ class AgibotA2DCubeController:
         object_b = world_to_base(self.env, self.object_cmd_pos_w)
         self.attached_offset_b = object_b - eef_b
         self.attached_offset_static_b = self.attached_offset_b.clone()
-        self.attached_pad_offset_b = object_b - self.gripper_anchor_b(policy_obs)
         import isaaclab.utils.math as math_utils
+
+        anchor_w = self.gripper_anchor_w()
+        if anchor_w is not None:
+            self.gripper_capture_anchor_w = anchor_w[0].detach().cpu().tolist()
+            self.gripper_capture_anchor_quat_w = self.gripper_anchor_quat_w()[0].detach().cpu().tolist()
+            center_w = self.left_gripper_center_w()
+            if center_w is not None:
+                self.gripper_capture_center_w = center_w[0].detach().cpu().tolist()
+            if self.left_pad_body_ids:
+                robot = self.env.scene["robot"]
+                pad_pos_w = robot.data.body_pos_w[:, self.left_pad_body_ids, :]
+                self.gripper_capture_pad_positions_w = pad_pos_w[0].detach().cpu().tolist()
+                if pad_pos_w.shape[1] >= 2:
+                    pad_gap = torch.linalg.vector_norm(pad_pos_w[:, 0, :] - pad_pos_w[:, 1, :], dim=-1)
+                    self.gripper_capture_pad_gap_m = float(pad_gap.max().detach().cpu().item())
+            if self.gripper_probe_body_ids:
+                robot = self.env.scene["robot"]
+                probe_pos_w = robot.data.body_pos_w[:, self.gripper_probe_body_ids, :]
+                self.gripper_capture_body_positions_w = {
+                    name: pos
+                    for name, pos in zip(
+                        self.gripper_probe_body_names,
+                        probe_pos_w[0].detach().cpu().tolist(),
+                        strict=False,
+                    )
+                }
+        captured_pad_offset = object_b - self.gripper_anchor_b(policy_obs)
+        offset_error = captured_pad_offset - self.centered_grasp_offset_b
+        self.gripper_capture_error_m = float(
+            torch.linalg.vector_norm(offset_error, dim=-1).max().detach().cpu().item()
+        )
+        self.gripper_capture_offset_b = captured_pad_offset[0].detach().cpu().tolist()
+        self.gripper_attach_snap_m = 0.0
+        self.attached_pad_offset_b = captured_pad_offset.clone()
 
         eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
         eef_quat_b = eef_quat_b / torch.linalg.vector_norm(eef_quat_b, dim=-1, keepdim=True).clamp_min(1.0e-6)
@@ -670,6 +839,24 @@ class AgibotA2DCubeController:
         offset_b[:, 2:3] = offset_b[:, 2:3] + z_step
         if self.attached_offset_static_b is None:
             self.attached_offset_b = offset_b
+
+    def clamp_object_into_gripper(self, policy_obs: dict[str, torch.Tensor], quat_w: torch.Tensor) -> None:
+        target_w = self.centered_grasp_object_pos_w(policy_obs)
+        target_w[:, 2] = self.source_object_pos_w[:, 2]
+        current = self.object_cmd_pos_w.clone()
+        delta = target_w - current
+        dist = torch.linalg.vector_norm(delta, dim=-1, keepdim=True)
+        ratio = torch.clamp(PRECLAMP_OBJECT_STEP_M / (dist + 1.0e-6), max=1.0)
+        new_pos = current + delta * ratio
+        step = torch.linalg.vector_norm(new_pos - current, dim=-1).max().item()
+        self.preclamp_max_object_step_m = max(self.preclamp_max_object_step_m, float(step))
+        self.preclamp_final_error_m = float(
+            torch.linalg.vector_norm(new_pos[:, :3] - target_w[:, :3], dim=-1).max().detach().cpu().item()
+        )
+        self.record_object_step(float(step), current, new_pos)
+        self.object_cmd_pos_w = new_pos.clone()
+        self.object_cmd_quat_w = quat_w.clone()
+        set_rigid_pose(self.env, self.spec.base.object_name, self.object_cmd_pos_w, quat_w)
 
     def after_step(self) -> None:
         if self.phase_index > self.phase_names.index("dock"):
@@ -723,10 +910,8 @@ class AgibotA2DCubeController:
         quat = self.source_object_quat_w
         if self.attached:
             self.update_attached_offset(policy_obs)
-            eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
-            self.carried_eef_b = eef_b
-            object_pos_b = self.attached_object_pos_b(eef_b, policy_obs)
-            target_pos_w = base_to_world(self.env, object_pos_b)
+            self.carried_eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
+            target_pos_w = self.attached_object_pos_w(policy_obs)
             current = self.object_cmd_pos_w.clone()
             self.object_cmd_pos_w = target_pos_w.clone()
             self.object_cmd_quat_w = quat.clone()
@@ -737,7 +922,8 @@ class AgibotA2DCubeController:
             self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
             self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
             actual_object_b = world_to_base(self.env, self.object_cmd_pos_w)
-            gripper_error = torch.linalg.vector_norm(actual_object_b - object_pos_b, dim=-1)
+            expected_object_b = world_to_base(self.env, target_pos_w)
+            gripper_error = torch.linalg.vector_norm(actual_object_b - expected_object_b, dim=-1)
             self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
             self.gripper_object_sync_error_max_m = max(
                 self.gripper_object_sync_error_max_m,
@@ -754,6 +940,8 @@ class AgibotA2DCubeController:
                 self.min_carried_gripper_body_clearance_m,
                 float(gripper_body_clearance.min().detach().cpu().item()),
             )
+        elif self.phase_name == "close":
+            self.clamp_object_into_gripper(policy_obs, quat)
         elif self.released:
             self.release_settle_steps += 1
             target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
@@ -885,16 +1073,19 @@ def main() -> None:
             last_gripper_sign = gripper_sign
 
             obs, _, _, _, _ = env.step(action)
+            controller.command_gripper_aperture()
             controller.after_step()
+            controller.command_gripper_aperture()
             controller.assist_object(obs["policy"])
             controller.tick_phase()
 
             object_b = world_to_base(env, controller.object_cmd_pos_w)
             eef_b = obs["policy"]["eef_pos"].reshape(env.num_envs, 3)
             if phase in ("descend", "close"):
-                grasp_point_b = controller.grasp_point_for_eef(eef_b, obs["policy"])
-                xy_error = torch.linalg.vector_norm(grasp_point_b[:, :2] - object_b[:, :2], dim=-1)
-                grasp_height_error = torch.abs(grasp_point_b[:, 2] - object_b[:, 2])
+                gripper_anchor_b = controller.gripper_anchor_b(obs["policy"])
+                target_anchor_b = object_b - controller.centered_grasp_offset_b
+                xy_error = torch.linalg.vector_norm(gripper_anchor_b[:, :2] - target_anchor_b[:, :2], dim=-1)
+                grasp_height_error = torch.abs(gripper_anchor_b[:, 2] - target_anchor_b[:, 2])
                 pick_descend_min_xy_error_m = min(
                     pick_descend_min_xy_error_m, float(xy_error.max().detach().cpu().item())
                 )
@@ -972,6 +1163,7 @@ def main() -> None:
         and release_cube_table_height_error_m <= CUBE_TABLE_HEIGHT_TOLERANCE_M
         and pick_descend_reached
         and controller.attached_offset_locked
+        and controller.gripper_capture_error_m <= GRIPPER_CAPTURE_ERROR_THRESHOLD_M
         and controller.attached_sync_error_max_m <= ATTACHED_SYNC_ERROR_THRESHOLD_M
         and controller.gripper_object_sync_error_max_m <= ATTACHED_SYNC_ERROR_THRESHOLD_M
         and controller.min_carried_object_body_clearance_m >= 0.0
@@ -1003,7 +1195,24 @@ def main() -> None:
         "pregrasp_max_object_motion_m": controller.pregrasp_max_object_motion_m,
         "lift_driven_pick_phases": sorted(LIFT_DRIVEN_PICK_PHASES),
         "lift_driven_place_phases": sorted(LIFT_DRIVEN_PLACE_PHASES),
-        "object_attachment_mode": "left_gripper_pad_midpoint_locked_offset",
+        "object_attachment_mode": "left_gripper_pad_midpoint_root_locked_partial_gripper",
+        "gripper_capture_error_m": controller.gripper_capture_error_m,
+        "gripper_capture_offset_b": controller.gripper_capture_offset_b,
+        "gripper_capture_anchor_w": controller.gripper_capture_anchor_w,
+        "gripper_capture_anchor_quat_w": controller.gripper_capture_anchor_quat_w,
+        "gripper_capture_center_w": controller.gripper_capture_center_w,
+        "gripper_capture_pad_positions_w": controller.gripper_capture_pad_positions_w,
+        "gripper_capture_pad_gap_m": controller.gripper_capture_pad_gap_m,
+        "gripper_capture_body_positions_w": controller.gripper_capture_body_positions_w,
+        "gripper_centered_grasp_offset_b": list(GRIPPER_CENTERED_GRASP_OFFSET_B),
+        "gripper_hold_joint_position": GRIPPER_CUBE_HOLD_JOINT_POS,
+        "gripper_hold_joint_names": controller.gripper_hold_joint_names,
+        "gripper_pad_gap_target_m": CUBE_HALF_HEIGHT * 2.0,
+        "gripper_capture_error_threshold_m": GRIPPER_CAPTURE_ERROR_THRESHOLD_M,
+        "gripper_attach_snap_m": controller.gripper_attach_snap_m,
+        "preclamp_object_step_m": PRECLAMP_OBJECT_STEP_M,
+        "preclamp_max_object_step_m": controller.preclamp_max_object_step_m,
+        "preclamp_final_error_m": controller.preclamp_final_error_m,
         "attached_sync_error_max_m": controller.attached_sync_error_max_m,
         "attached_sync_error_last_m": controller.attached_sync_error_last_m,
         "attached_sync_error_threshold_m": ATTACHED_SYNC_ERROR_THRESHOLD_M,
@@ -1029,6 +1238,7 @@ def main() -> None:
             if controller.attached_pad_offset_b is None
             else controller.attached_pad_offset_b[0].detach().cpu().tolist()
         ),
+        "gripper_center_body_names": controller.gripper_center_body_names,
         "left_pad_body_names": controller.left_pad_body_names,
         "attached_offset_locked": controller.attached_offset_locked,
         "release_pose_w": controller.release_pose_w,
