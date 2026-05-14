@@ -42,21 +42,28 @@ TARGET_TABLE_POS = (4.80, 0.0, 0.60)
 TABLE_SCALE = (1.0, 1.0, 0.60)
 CUBE_SCALE = 2.0
 CUBE_HALF_HEIGHT = 0.0203 * CUBE_SCALE
-CUBE_SOURCE_POS = (0.48, 0.22, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
-CUBE_TARGET_POS = (4.18, 0.22, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
-GRASP_EEF_Z_OFFSET = 0.030
+CUBE_SOURCE_POS = (0.48, -0.22, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+CUBE_TARGET_POS = (4.18, -0.22, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+GRASP_EEF_Z_OFFSET = 0.015
 APPROACH_EEF_Z_OFFSET = 0.220
 RETREAT_EEF_Z_OFFSET = 0.260
-AISLE_Y = -1.85
-ROBOT_BASE_RADIUS_M = 0.45
-TABLE_CLEARANCE_THRESHOLD_M = 0.35
+CARRY_OBJECT_LIFT_M = 0.115
+GRASP_EEF_Y_OFFSET_M = 0.105
+AISLE_Y = -1.60
+START_DOCK_X_SHIFT_M = 0.11
+ROBOT_BASE_RADIUS_M = 0.42
+TABLE_CLEARANCE_THRESHOLD_M = 0.30
 STATIC_OBSTACLE_CLEARANCE_THRESHOLD_M = 0.20
 CUBE_TABLE_HEIGHT_TOLERANCE_M = 0.008
 PICK_XY_TOLERANCE_M = 0.16
 ATTACHED_SYNC_ERROR_THRESHOLD_M = 0.015
 ATTACHED_OBJECT_MAX_STEP_M = 0.085
 CARRIED_EEF_STEP_M = 0.035
+ATTACHED_OFFSET_BLEND_STEP_M = 0.004
+OFFSET_Z_BLEND_STEP_M = 0.0015
+CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.300)
 OBJECT_TELEPORT_STEP_THRESHOLD_M = 0.13
+BODY_KEEP_OUT_RADIUS_M = 0.58
 QHD_WIDTH = 2560
 QHD_HEIGHT = 1440
 
@@ -131,8 +138,8 @@ def configure_cube_object(env_cfg) -> None:
 
 
 def set_camera_view(env, env_step_s: float) -> None:
-    eye = torch.tensor([[1.60, -6.10, 2.45]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
-    lookat = torch.tensor([[2.10, -0.15, 0.78]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
+    eye = torch.tensor([[2.05, -7.25, 2.65]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
+    lookat = torch.tensor([[2.15, -0.35, 0.78]], dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
     env.scene["demo_camera"].set_world_poses_from_view(eye, lookat)
     for _ in range(4):
         env.sim.render()
@@ -200,6 +207,15 @@ def height_error_on_table(pos_w: torch.Tensor, table_z: float) -> float:
     return float(torch.abs(pos_w[:, 2] - expected).max().detach().cpu().item())
 
 
+def world_to_base_with_pose(pos_w: torch.Tensor, root_pos_w: torch.Tensor, root_quat_w: torch.Tensor) -> torch.Tensor:
+    import isaaclab.utils.math as math_utils
+
+    quat_w = torch.zeros((pos_w.shape[0], 4), device=pos_w.device)
+    quat_w[:, 0] = 1.0
+    pos_b, _ = math_utils.subtract_frame_transforms(root_pos_w, root_quat_w, pos_w, quat_w)
+    return pos_b
+
+
 class AgibotA2DCubeController:
     base_motion_phases = ("undock", "aisle_drive", "dock")
     phase_names = [
@@ -208,7 +224,7 @@ class AgibotA2DCubeController:
         "descend",
         "close",
         "lift_up_carry",
-        "tuck_carry",
+        "hold_carry",
         "undock",
         "aisle_drive",
         "dock",
@@ -245,6 +261,10 @@ class AgibotA2DCubeController:
         self.pregrasp_max_object_motion_m = 0.0
         self.attached_sync_error_max_m = 0.0
         self.attached_sync_error_last_m = 0.0
+        self.gripper_object_sync_error_max_m = 0.0
+        self.gripper_object_sync_error_last_m = 0.0
+        self.min_carried_object_body_clearance_m = float("inf")
+        self.min_carried_gripper_body_clearance_m = float("inf")
         self.release_settle_steps = 0
         self.release_pose_w: list[float] | None = None
         self.table_aabbs_xy = table_aabbs_xy
@@ -254,6 +274,8 @@ class AgibotA2DCubeController:
         robot = env.scene["robot"]
         self.root_start_pos = robot.data.root_pos_w.clone()
         self.root_start_quat = robot.data.root_quat_w.clone()
+        self.root_start_pos[:, 0] += START_DOCK_X_SHIFT_M
+        set_robot_root_pose(self.env, self.root_start_pos, self.root_start_quat)
         self.root_start_yaw = quat_to_yaw(self.root_start_quat)
         self.root_goal_pos = self.root_start_pos.clone()
         table_delta = torch.tensor(
@@ -299,15 +321,25 @@ class AgibotA2DCubeController:
         self.source_object_quat_w[:, 0] = 1.0
         self.object_cmd_pos_w = self.source_object_pos_w.clone()
         self.object_cmd_quat_w = self.source_object_quat_w.clone()
-        self.object_start_b = world_to_base(env, self.source_object_pos_w)
+        self.object_start_b = world_to_base_with_pose(
+            self.source_object_pos_w, self.root_start_pos, self.root_start_quat
+        )
+        self.grasp_offset_b = torch.tensor(
+            [[0.0, -GRASP_EEF_Y_OFFSET_M, -GRASP_EEF_Z_OFFSET]],
+            dtype=torch.float32,
+            device=self.device,
+        ).repeat(self.num_envs, 1)
         self.attached_offset_b = self._z(-GRASP_EEF_Z_OFFSET)
+        self.attached_offset_static_b: torch.Tensor | None = None
+        self.attached_offset_goal_b: torch.Tensor | None = None
+        self.attached_offset_eef_b: torch.Tensor | None = None
+        self.attached_visual_offset_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.attached_offset_locked = False
         self.attach_offset_capture_step: int | None = None
         self.carried_eef_b: torch.Tensor | None = None
-        self.carry_tuck_b = torch.tensor(
-            [[0.42, -0.05, 0.82]], dtype=torch.float32, device=self.device
-        ).repeat(self.num_envs, 1)
-        self.current_eef_target_b = self.object_start_b + self._z(APPROACH_EEF_Z_OFFSET)
+        self.carry_object_b = self.object_start_b + self._z(CARRY_OBJECT_LIFT_M)
+        self.carry_eef_b = self.eef_for_object(self.carry_object_b)
+        self.current_eef_target_b = self.eef_for_object(self.object_start_b, APPROACH_EEF_Z_OFFSET)
 
         lift_ids, _ = robot.find_joints(["joint_lift_body"], preserve_order=True)
         body_pitch_ids, _ = robot.find_joints(["joint_body_pitch"], preserve_order=True)
@@ -343,12 +375,62 @@ class AgibotA2DCubeController:
         target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
         return world_to_base(self.env, target_w)
 
+    def eef_quat_from_policy(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
+        return eef_quat_b / torch.linalg.vector_norm(eef_quat_b, dim=-1, keepdim=True).clamp_min(1.0e-6)
+
+    def attached_offset_from_policy(
+        self, policy_obs: dict[str, torch.Tensor] | None = None, include_visual: bool = True
+    ) -> torch.Tensor:
+        if not self.attached_offset_locked:
+            return self.grasp_offset_b
+        if policy_obs is None or self.attached_offset_eef_b is None:
+            return self.attached_offset_b
+        import isaaclab.utils.math as math_utils
+
+        offset_b = math_utils.quat_apply(self.eef_quat_from_policy(policy_obs), self.attached_offset_eef_b)
+        if include_visual:
+            offset_b = offset_b + self.attached_visual_offset_b
+        return offset_b
+
+    def eef_for_object(
+        self,
+        object_b: torch.Tensor,
+        z_offset: float | None = None,
+        policy_obs: dict[str, torch.Tensor] | None = None,
+    ) -> torch.Tensor:
+        offset_b = self.attached_offset_from_policy(policy_obs, include_visual=False)
+        target = object_b - offset_b
+        if z_offset is not None:
+            target[:, 2] = object_b[:, 2] + z_offset
+        return target
+
+    def grasp_point_for_eef(
+        self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor] | None = None
+    ) -> torch.Tensor:
+        offset_b = self.attached_offset_from_policy(policy_obs, include_visual=True)
+        return eef_b + offset_b
+
+    def update_attached_offset(self, policy_obs: dict[str, torch.Tensor]) -> None:
+        if not self.attached_offset_locked:
+            return
+        desired_visual = torch.zeros_like(self.attached_visual_offset_b)
+        if self.phase_name in ("undock", "aisle_drive"):
+            desired_visual = torch.tensor(
+                [CARRY_GRASP_VISUAL_OFFSET_B], dtype=torch.float32, device=self.device
+            ).repeat(self.num_envs, 1)
+        visual_delta = desired_visual - self.attached_visual_offset_b
+        visual_dist = torch.linalg.vector_norm(visual_delta, dim=-1, keepdim=True)
+        visual_ratio = torch.clamp(ATTACHED_OFFSET_BLEND_STEP_M / (visual_dist + 1.0e-6), max=1.0)
+        self.attached_visual_offset_b = self.attached_visual_offset_b + visual_delta * visual_ratio
+        self.attached_offset_b = self.attached_offset_from_policy(policy_obs)
+
     def lift_target(self) -> float:
         phase = self.phase_name
         if phase in (
             "approach",
             "lift_up_carry",
-            "tuck_carry",
+            "hold_carry",
             "undock",
             "aisle_drive",
             "dock",
@@ -356,34 +438,36 @@ class AgibotA2DCubeController:
             "retreat",
         ):
             return self.lift_high
-        if phase in ("lift_down_pick", "descend", "close", "lower_lift_place", "open"):
+        if phase in ("lift_down_pick", "descend", "close"):
             return self.lift_low
+        if phase in ("lower_lift_place", "open"):
+            return self.lift_mid
         return self.lift_mid
 
-    def phase_target(self) -> tuple[torch.Tensor, float, int, bool, bool]:
+    def phase_target(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, float, int, bool, bool]:
         open_cmd = 1.0
         close_cmd = -1.0
         phase = self.phase_name
         if phase == "approach":
-            return self.object_start_b + self._z(APPROACH_EEF_Z_OFFSET), open_cmd, 0, False, False
+            return self.eef_for_object(self.object_start_b, APPROACH_EEF_Z_OFFSET), open_cmd, 0, False, False
         if phase == "lift_down_pick":
-            return self.object_start_b + self._z(0.150), open_cmd, 34, False, False
+            return self.eef_for_object(self.object_start_b, 0.150), open_cmd, 34, False, False
         if phase == "descend":
-            return self.object_start_b + self._z(GRASP_EEF_Z_OFFSET), open_cmd, 0, False, False
+            return self.eef_for_object(self.object_start_b), open_cmd, 0, False, False
         if phase == "close":
-            return self.object_start_b + self._z(GRASP_EEF_Z_OFFSET), close_cmd, 42, True, False
+            return self.eef_for_object(self.object_start_b), close_cmd, 42, True, False
         if phase == "lift_up_carry":
-            return self.object_start_b + self._z(APPROACH_EEF_Z_OFFSET), close_cmd, 0, True, False
-        if phase == "tuck_carry":
-            return self.carry_tuck_b, close_cmd, 0, True, False
+            return self.eef_for_object(self.carry_object_b, policy_obs=policy_obs), close_cmd, 0, True, False
+        if phase == "hold_carry":
+            return self.eef_for_object(self.carry_object_b, policy_obs=policy_obs), close_cmd, 20, True, False
         target_b = self.target_object_b()
         if phase == "transfer_align":
-            return target_b + self._z(APPROACH_EEF_Z_OFFSET), close_cmd, 24, True, False
+            return self.eef_for_object(target_b + self._z(CARRY_OBJECT_LIFT_M), policy_obs=policy_obs), close_cmd, 24, True, False
         if phase == "lower_lift_place":
-            return target_b + self._z(GRASP_EEF_Z_OFFSET), close_cmd, 0, True, False
+            return self.eef_for_object(target_b, policy_obs=policy_obs), close_cmd, 0, True, False
         if phase == "open":
-            return target_b + self._z(GRASP_EEF_Z_OFFSET), open_cmd, 38, False, True
-        return target_b + self._z(RETREAT_EEF_Z_OFFSET), open_cmd, 0, False, True
+            return self.eef_for_object(target_b, policy_obs=policy_obs), open_cmd, 38, False, True
+        return self.eef_for_object(target_b, RETREAT_EEF_Z_OFFSET), open_cmd, 0, False, True
 
     def command_lift(self, step: int) -> None:
         if not self.lift_joint_ids:
@@ -406,19 +490,18 @@ class AgibotA2DCubeController:
             self.lift_trace.append({"step": step, "phase": self.phase_name, "joint_lift_body": value})
 
     def act(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, str]:
+        self.update_attached_offset(policy_obs)
         if self.phase_name in self.base_motion_phases:
-            return hold_current_pose_action(self.env, policy_obs, gripper=-1.0), self.phase_name
+            target = self.eef_for_object(self.carry_object_b, policy_obs=policy_obs)
+            self.current_eef_target_b = target.clone()
+            return self.arm_action_to_target(policy_obs, target, gripper=-1.0, max_delta=0.035), self.phase_name
 
-        target, gripper, hold_steps, attach, release = self.phase_target()
+        target, gripper, hold_steps, attach, release = self.phase_target(policy_obs)
         self.current_eef_target_b = target.clone()
+        action = self.arm_action_to_target(policy_obs, target, gripper=gripper)
+
         eef = policy_obs["eef_pos"].reshape(self.num_envs, 3)
-        delta = target - eef
-        dist = torch.linalg.vector_norm(delta, dim=-1)
-        action = torch.zeros((self.num_envs, self.action_dim), dtype=torch.float32, device=self.device)
-        max_delta = 0.028 if self.phase_name in ("descend", "lower_lift_place") else 0.045
-        scale = torch.clamp(max_delta / (dist + 1.0e-6), max=1.0).unsqueeze(-1)
-        action[:, :3] = delta * scale
-        action[:, -1] = gripper
+        dist = torch.linalg.vector_norm(target - eef, dim=-1)
 
         if release:
             if self.release_pose_w is None:
@@ -437,11 +520,34 @@ class AgibotA2DCubeController:
                 self.hold_count = 0
                 self.advance_phase()
         else:
-            tolerance = 0.030 if self.phase_name in ("descend", "lower_lift_place") else 0.045
+            if self.phase_name == "lower_lift_place":
+                tolerance = 0.006
+            elif self.phase_name == "descend":
+                tolerance = 0.030
+            else:
+                tolerance = 0.045
             if bool((dist < tolerance).all().item()):
                 self.hold_count = 0
                 self.advance_phase()
         return action, self.phase_name
+
+    def arm_action_to_target(
+        self,
+        policy_obs: dict[str, torch.Tensor],
+        target: torch.Tensor,
+        gripper: float,
+        max_delta: float | None = None,
+    ) -> torch.Tensor:
+        eef = policy_obs["eef_pos"].reshape(self.num_envs, 3)
+        delta = target - eef
+        dist = torch.linalg.vector_norm(delta, dim=-1)
+        action = torch.zeros((self.num_envs, self.action_dim), dtype=torch.float32, device=self.device)
+        if max_delta is None:
+            max_delta = 0.028 if self.phase_name in ("descend", "lower_lift_place") else 0.045
+        scale = torch.clamp(float(max_delta) / (dist + 1.0e-6), max=1.0).unsqueeze(-1)
+        action[:, :3] = delta * scale
+        action[:, -1] = gripper
+        return action
 
     def advance_phase(self) -> None:
         self.phase_index += 1
@@ -455,7 +561,7 @@ class AgibotA2DCubeController:
             "lift_down_pick": 95,
             "descend": 170,
             "lift_up_carry": 145,
-            "tuck_carry": 120,
+            "hold_carry": 80,
             "transfer_align": 90,
             "lower_lift_place": 180,
             "retreat": 110,
@@ -466,13 +572,32 @@ class AgibotA2DCubeController:
     def capture_attached_offset(self, policy_obs: dict[str, torch.Tensor]) -> None:
         if self.attached_offset_locked:
             return
+        eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
         object_b = world_to_base(self.env, self.object_cmd_pos_w)
-        eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3)
         self.attached_offset_b = object_b - eef_b
-        self.attached_offset_b[:, 0] = torch.clamp(self.attached_offset_b[:, 0] - 0.035, min=-0.015, max=0.020)
-        self.attached_offset_b[:, 2] = -GRASP_EEF_Z_OFFSET
-        self.carried_eef_b = eef_b.clone()
+        self.attached_offset_static_b = self.attached_offset_b.clone()
+        import isaaclab.utils.math as math_utils
+
+        eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
+        eef_quat_b = eef_quat_b / torch.linalg.vector_norm(eef_quat_b, dim=-1, keepdim=True).clamp_min(1.0e-6)
+        self.attached_offset_eef_b = math_utils.quat_apply_inverse(eef_quat_b, self.attached_offset_b)
+        self.attached_offset_goal_b = self.attached_offset_static_b.clone()
+        self.attached_offset_goal_b[:, 2] = -GRASP_EEF_Z_OFFSET
         self.attached_offset_locked = True
+        self.carry_eef_b = self.eef_for_object(self.carry_object_b)
+        self.carried_eef_b = eef_b.clone()
+
+    def blend_attached_offset(self) -> None:
+        if self.attached_offset_goal_b is None or not self.attached_offset_locked:
+            return
+        if self.phase_name in ("close",):
+            return
+        offset_b = self.attached_offset_static_b if self.attached_offset_static_b is not None else self.attached_offset_b
+        z_delta = self.attached_offset_goal_b[:, 2:3] - offset_b[:, 2:3]
+        z_step = torch.clamp(z_delta, min=-OFFSET_Z_BLEND_STEP_M, max=OFFSET_Z_BLEND_STEP_M)
+        offset_b[:, 2:3] = offset_b[:, 2:3] + z_step
+        if self.attached_offset_static_b is None:
+            self.attached_offset_b = offset_b
 
     def after_step(self) -> None:
         if self.phase_index > self.phase_names.index("dock"):
@@ -525,14 +650,10 @@ class AgibotA2DCubeController:
     def assist_object(self, policy_obs: dict[str, torch.Tensor]) -> None:
         quat = self.source_object_quat_w
         if self.attached:
-            desired_eef_b = self.carry_tuck_b if self.phase_name in self.base_motion_phases else self.current_eef_target_b
-            if self.carried_eef_b is None:
-                self.carried_eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
-            delta_b = desired_eef_b - self.carried_eef_b
-            dist_b = torch.linalg.vector_norm(delta_b, dim=-1, keepdim=True)
-            ratio_b = torch.clamp(CARRIED_EEF_STEP_M / (dist_b + 1.0e-6), max=1.0)
-            self.carried_eef_b = self.carried_eef_b + delta_b * ratio_b
-            object_pos_b = self.carried_eef_b + self.attached_offset_b
+            self.update_attached_offset(policy_obs)
+            eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3).clone()
+            self.carried_eef_b = eef_b
+            object_pos_b = self.grasp_point_for_eef(eef_b, policy_obs)
             target_pos_w = base_to_world(self.env, object_pos_b)
             current = self.object_cmd_pos_w.clone()
             self.object_cmd_pos_w = target_pos_w.clone()
@@ -543,10 +664,29 @@ class AgibotA2DCubeController:
             sync_error = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - target_pos_w[:, :3], dim=-1)
             self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
             self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
+            gripper_error = torch.linalg.vector_norm(
+                object_pos_b - self.grasp_point_for_eef(eef_b, policy_obs), dim=-1
+            )
+            self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
+            self.gripper_object_sync_error_max_m = max(
+                self.gripper_object_sync_error_max_m,
+                self.gripper_object_sync_error_last_m,
+            )
+            object_body_clearance = torch.linalg.vector_norm(object_pos_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
+            gripper_body_clearance = torch.linalg.vector_norm(eef_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
+            self.min_carried_object_body_clearance_m = min(
+                self.min_carried_object_body_clearance_m,
+                float(object_body_clearance.min().detach().cpu().item()),
+            )
+            self.min_carried_gripper_body_clearance_m = min(
+                self.min_carried_gripper_body_clearance_m,
+                float(gripper_body_clearance.min().detach().cpu().item()),
+            )
         elif self.released:
             self.release_settle_steps += 1
             target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
-            self.move_object_toward(target_w, quat, 0.040)
+            if float(torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - target_w[:, :3], dim=-1).max().item()) > 0.006:
+                self.move_object_toward(target_w, quat, 0.012)
         else:
             displacement = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - self.source_object_pos_w[:, :3], dim=-1)
             self.pregrasp_max_object_motion_m = max(
@@ -672,8 +812,9 @@ def main() -> None:
             object_b = world_to_base(env, controller.object_cmd_pos_w)
             eef_b = obs["policy"]["eef_pos"].reshape(env.num_envs, 3)
             if phase in ("descend", "close"):
-                xy_error = torch.linalg.vector_norm(eef_b[:, :2] - object_b[:, :2], dim=-1)
-                grasp_height_error = torch.abs((eef_b[:, 2] - object_b[:, 2]) - GRASP_EEF_Z_OFFSET)
+                grasp_point_b = controller.grasp_point_for_eef(eef_b, obs["policy"])
+                xy_error = torch.linalg.vector_norm(grasp_point_b[:, :2] - object_b[:, :2], dim=-1)
+                grasp_height_error = torch.abs(grasp_point_b[:, 2] - object_b[:, 2])
                 pick_descend_min_xy_error_m = min(
                     pick_descend_min_xy_error_m, float(xy_error.max().detach().cpu().item())
                 )
@@ -681,8 +822,13 @@ def main() -> None:
                     pick_descend_min_grasp_height_error_m,
                     float(grasp_height_error.max().detach().cpu().item()),
                 )
-            if controller.released and release_cube_table_height_error_m is None:
-                release_cube_table_height_error_m = height_error_on_table(controller.object_cmd_pos_w, TARGET_TABLE_POS[2])
+            if controller.released:
+                release_error = height_error_on_table(controller.object_cmd_pos_w, TARGET_TABLE_POS[2])
+                release_cube_table_height_error_m = (
+                    release_error
+                    if release_cube_table_height_error_m is None
+                    else min(release_cube_table_height_error_m, release_error)
+                )
 
             base_xy = env.scene["robot"].data.root_pos_w[:, :2]
             min_runtime_table_clearance = min(
@@ -744,7 +890,10 @@ def main() -> None:
         and final_cube_table_height_error_m <= CUBE_TABLE_HEIGHT_TOLERANCE_M
         and release_cube_table_height_error_m <= CUBE_TABLE_HEIGHT_TOLERANCE_M
         and pick_descend_reached
+        and controller.attached_offset_locked
         and controller.attached_sync_error_max_m <= ATTACHED_SYNC_ERROR_THRESHOLD_M
+        and controller.gripper_object_sync_error_max_m <= ATTACHED_SYNC_ERROR_THRESHOLD_M
+        and controller.min_carried_object_body_clearance_m >= 0.0
         and controller.object_max_step_m <= OBJECT_TELEPORT_STEP_THRESHOLD_M
     )
     curve_samples = controller.route_samples_xy
@@ -774,6 +923,11 @@ def main() -> None:
         "attached_sync_error_max_m": controller.attached_sync_error_max_m,
         "attached_sync_error_last_m": controller.attached_sync_error_last_m,
         "attached_sync_error_threshold_m": ATTACHED_SYNC_ERROR_THRESHOLD_M,
+        "gripper_object_sync_error_max_m": controller.gripper_object_sync_error_max_m,
+        "gripper_object_sync_error_last_m": controller.gripper_object_sync_error_last_m,
+        "min_carried_object_body_clearance_m": controller.min_carried_object_body_clearance_m,
+        "min_carried_gripper_body_clearance_m": controller.min_carried_gripper_body_clearance_m,
+        "body_keep_out_radius_m": BODY_KEEP_OUT_RADIUS_M,
         "pick_descend_reached": pick_descend_reached,
         "pick_descend_min_xy_error_m": pick_descend_min_xy_error_m,
         "pick_descend_min_grasp_height_error_m": pick_descend_min_grasp_height_error_m,
