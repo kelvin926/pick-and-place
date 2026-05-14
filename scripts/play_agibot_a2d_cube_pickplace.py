@@ -60,30 +60,23 @@ CUBE_TABLE_HEIGHT_TOLERANCE_M = 0.008
 PICK_XY_TOLERANCE_M = 0.16
 ATTACHED_SYNC_ERROR_THRESHOLD_M = 0.015
 ATTACHED_OBJECT_MAX_STEP_M = 0.085
-ATTACH_BLEND_STEP_M = 0.035
 CARRIED_EEF_STEP_M = 0.035
 ATTACHED_OFFSET_BLEND_STEP_M = 0.004
 OFFSET_Z_BLEND_STEP_M = 0.0015
 CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.0)
 OBJECT_TELEPORT_STEP_THRESHOLD_M = 0.13
 BODY_KEEP_OUT_RADIUS_M = 0.58
-LEFT_PAD_ATTACHMENT_PHASES = {
-    "lift_up_carry",
-    "hold_carry",
-    "undock",
-    "aisle_drive",
-    "dock",
-    "transfer_align",
-}
-ATTACH_BLEND_PHASES = {"lift_up_carry", "hold_carry", "lower_lift_place"}
+POST_RELEASE_SETTLE_STEPS = 72
+LIFT_DRIVEN_PICK_PHASES = {"lift_up_carry", "hold_carry"}
+LIFT_DRIVEN_PLACE_PHASES = {"lower_lift_place", "open"}
 QHD_WIDTH = 2560
 QHD_HEIGHT = 1440
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Agibot A2D lift-assisted cube pick and place demo.")
-    parser.add_argument("--max_steps", type=int, default=1400)
-    parser.add_argument("--drive_steps", type=int, default=900)
+    parser.add_argument("--max_steps", type=int, default=2200)
+    parser.add_argument("--drive_steps", type=int, default=1400)
     parser.add_argument("--record_frames", action="store_true")
     parser.add_argument("--frames_dir", default=None)
     parser.add_argument("--summary", default=None)
@@ -282,8 +275,6 @@ class AgibotA2DCubeController:
         self.object_max_step_from_w: list[float] | None = None
         self.object_max_step_to_w: list[float] | None = None
         self.pregrasp_max_object_motion_m = 0.0
-        self.attach_blend_error_max_m = 0.0
-        self.attach_blend_error_last_m = 0.0
         self.attached_sync_error_max_m = 0.0
         self.attached_sync_error_last_m = 0.0
         self.gripper_object_sync_error_max_m = 0.0
@@ -358,6 +349,7 @@ class AgibotA2DCubeController:
         self.attached_offset_static_b: torch.Tensor | None = None
         self.attached_offset_goal_b: torch.Tensor | None = None
         self.attached_offset_eef_b: torch.Tensor | None = None
+        self.attached_pad_offset_b: torch.Tensor | None = None
         self.attached_visual_offset_b = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.attached_offset_locked = False
         self.attach_offset_capture_step: int | None = None
@@ -376,7 +368,7 @@ class AgibotA2DCubeController:
         self.lift_low = 0.135
         self.lift_mid = 0.190
         self.lift_high = 0.225
-        self.lift_max_step = 0.0025
+        self.lift_max_step = 0.0010
         self.lift_trace: list[dict[str, float | int | str]] = []
         self.lift_min = float("inf")
         self.lift_max = float("-inf")
@@ -402,6 +394,32 @@ class AgibotA2DCubeController:
     def target_object_b(self) -> torch.Tensor:
         target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
         return world_to_base(self.env, target_w)
+
+    def lift_joint_value(self) -> torch.Tensor:
+        if not self.lift_joint_ids:
+            return torch.full((self.num_envs, 1), self.lift_high, dtype=torch.float32, device=self.device)
+        robot = self.env.scene["robot"]
+        return robot.data.joint_pos[:, self.lift_joint_ids].reshape(self.num_envs, -1).mean(dim=1, keepdim=True)
+
+    def pick_lift_progress(self) -> torch.Tensor:
+        denom = max(self.lift_high - self.lift_low, 1.0e-6)
+        raw = torch.clamp((self.lift_joint_value() - self.lift_low) / denom, min=0.0, max=1.0)
+        return smooth_step(raw)
+
+    def place_lift_progress(self) -> torch.Tensor:
+        denom = max(self.lift_high - self.lift_mid, 1.0e-6)
+        raw = torch.clamp((self.lift_joint_value() - self.lift_mid) / denom, min=0.0, max=1.0)
+        return smooth_step(raw)
+
+    def pick_lift_object_b(self) -> torch.Tensor:
+        object_b = self.object_start_b.clone()
+        object_b[:, 2:3] = self.object_start_b[:, 2:3] + CARRY_OBJECT_LIFT_M * self.pick_lift_progress()
+        return object_b
+
+    def target_lift_object_b(self) -> torch.Tensor:
+        object_b = self.target_object_b()
+        object_b[:, 2:3] = object_b[:, 2:3] + CARRY_OBJECT_LIFT_M * self.place_lift_progress()
+        return object_b
 
     def eef_quat_from_policy(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
         eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
@@ -433,6 +451,13 @@ class AgibotA2DCubeController:
             target[:, 2] = object_b[:, 2] + z_offset
         return target
 
+    def eef_for_attached_object(
+        self, object_b: torch.Tensor, policy_obs: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3)
+        current_object_b = self.attached_object_pos_b(eef_b, policy_obs)
+        return eef_b + (object_b - current_object_b)
+
     def grasp_point_for_eef(
         self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor] | None = None
     ) -> torch.Tensor:
@@ -446,11 +471,15 @@ class AgibotA2DCubeController:
         pad_pos_w = robot.data.body_pos_w[:, self.left_pad_body_ids, :].mean(dim=1)
         return world_to_base(self.env, pad_pos_w)
 
+    def gripper_anchor_b(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        pad_midpoint_b = self.left_gripper_pad_midpoint_b()
+        if pad_midpoint_b is not None:
+            return pad_midpoint_b
+        return policy_obs["eef_pos"].reshape(self.num_envs, 3)
+
     def attached_object_pos_b(self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
-        if self.phase_name in LEFT_PAD_ATTACHMENT_PHASES:
-            pad_midpoint_b = self.left_gripper_pad_midpoint_b()
-            if pad_midpoint_b is not None:
-                return pad_midpoint_b
+        if self.attached_pad_offset_b is not None:
+            return self.gripper_anchor_b(policy_obs) + self.attached_pad_offset_b
         return self.grasp_point_for_eef(eef_b, policy_obs)
 
     def update_attached_offset(self, policy_obs: dict[str, torch.Tensor]) -> None:
@@ -493,22 +522,22 @@ class AgibotA2DCubeController:
         if phase == "approach":
             return self.eef_for_object(self.object_start_b, APPROACH_EEF_Z_OFFSET), open_cmd, 0, False, False
         if phase == "lift_down_pick":
-            return self.eef_for_object(self.object_start_b, 0.150), open_cmd, 34, False, False
+            return self.eef_for_object(self.object_start_b, 0.150), open_cmd, 105, False, False
         if phase == "descend":
             return self.eef_for_object(self.object_start_b), open_cmd, 0, False, False
         if phase == "close":
             return self.eef_for_object(self.object_start_b), close_cmd, 42, True, False
         if phase == "lift_up_carry":
-            return self.eef_for_object(self.carry_object_b, policy_obs=policy_obs), close_cmd, 0, True, False
+            return self.eef_for_attached_object(self.pick_lift_object_b(), policy_obs), close_cmd, 0, True, False
         if phase == "hold_carry":
-            return self.eef_for_object(self.carry_object_b, policy_obs=policy_obs), close_cmd, 20, True, False
+            return self.eef_for_attached_object(self.pick_lift_object_b(), policy_obs), close_cmd, 120, True, False
         target_b = self.target_object_b()
         if phase == "transfer_align":
-            return self.eef_for_object(target_b + self._z(CARRY_OBJECT_LIFT_M), policy_obs=policy_obs), close_cmd, 24, True, False
+            return self.eef_for_attached_object(target_b + self._z(CARRY_OBJECT_LIFT_M), policy_obs), close_cmd, 24, True, False
         if phase == "lower_lift_place":
-            return self.eef_for_object(target_b, policy_obs=policy_obs), close_cmd, 0, True, False
+            return self.eef_for_attached_object(self.target_lift_object_b(), policy_obs), close_cmd, 0, True, False
         if phase == "open":
-            return self.eef_for_object(target_b, policy_obs=policy_obs), open_cmd, 38, False, True
+            return self.eef_for_attached_object(target_b, policy_obs), open_cmd, 38, False, True
         return self.eef_for_object(target_b, RETREAT_EEF_Z_OFFSET), open_cmd, 0, False, True
 
     def command_lift(self, step: int) -> None:
@@ -534,7 +563,7 @@ class AgibotA2DCubeController:
     def act(self, policy_obs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, str]:
         self.update_attached_offset(policy_obs)
         if self.phase_name in self.base_motion_phases:
-            target = self.eef_for_object(self.carry_object_b, policy_obs=policy_obs)
+            target = self.eef_for_attached_object(self.carry_object_b, policy_obs)
             self.current_eef_target_b = target.clone()
             return self.arm_action_to_target(policy_obs, target, gripper=-1.0, max_delta=0.035), self.phase_name
 
@@ -600,12 +629,12 @@ class AgibotA2DCubeController:
         self.phase_step_count += 1
         max_steps = {
             "approach": 150,
-            "lift_down_pick": 95,
+            "lift_down_pick": 140,
             "descend": 170,
             "lift_up_carry": 145,
-            "hold_carry": 80,
+            "hold_carry": 150,
             "transfer_align": 90,
-            "lower_lift_place": 180,
+            "lower_lift_place": 240,
             "retreat": 110,
         }
         if self.phase_name in max_steps and self.phase_step_count >= max_steps[self.phase_name]:
@@ -618,6 +647,7 @@ class AgibotA2DCubeController:
         object_b = world_to_base(self.env, self.object_cmd_pos_w)
         self.attached_offset_b = object_b - eef_b
         self.attached_offset_static_b = self.attached_offset_b.clone()
+        self.attached_pad_offset_b = object_b - self.gripper_anchor_b(policy_obs)
         import isaaclab.utils.math as math_utils
 
         eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
@@ -698,36 +728,24 @@ class AgibotA2DCubeController:
             object_pos_b = self.attached_object_pos_b(eef_b, policy_obs)
             target_pos_w = base_to_world(self.env, object_pos_b)
             current = self.object_cmd_pos_w.clone()
-            blend_active = self.phase_name in ATTACH_BLEND_PHASES
-            if blend_active:
-                delta = target_pos_w - current
-                dist = torch.linalg.vector_norm(delta, dim=-1, keepdim=True)
-                ratio = torch.clamp(ATTACH_BLEND_STEP_M / (dist + 1.0e-6), max=1.0)
-                self.object_cmd_pos_w = current + delta * ratio
-                blend_error = torch.linalg.vector_norm(target_pos_w[:, :3] - self.object_cmd_pos_w[:, :3], dim=-1)
-                self.attach_blend_error_last_m = float(blend_error.max().detach().cpu().item())
-                self.attach_blend_error_max_m = max(self.attach_blend_error_max_m, self.attach_blend_error_last_m)
-            else:
-                self.object_cmd_pos_w = target_pos_w.clone()
+            self.object_cmd_pos_w = target_pos_w.clone()
             self.object_cmd_quat_w = quat.clone()
             step = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - current[:, :3], dim=-1).max().item()
             self.record_object_step(float(step), current, self.object_cmd_pos_w)
             set_rigid_pose(self.env, self.spec.base.object_name, self.object_cmd_pos_w, quat)
             sync_error = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - target_pos_w[:, :3], dim=-1)
-            sync_ready = (not blend_active) or bool((sync_error <= ATTACHED_SYNC_ERROR_THRESHOLD_M).all().item())
-            if sync_ready:
-                self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
-                self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
+            self.attached_sync_error_last_m = float(sync_error.max().detach().cpu().item())
+            self.attached_sync_error_max_m = max(self.attached_sync_error_max_m, self.attached_sync_error_last_m)
             actual_object_b = world_to_base(self.env, self.object_cmd_pos_w)
             gripper_error = torch.linalg.vector_norm(actual_object_b - object_pos_b, dim=-1)
-            if sync_ready:
-                self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
-                self.gripper_object_sync_error_max_m = max(
-                    self.gripper_object_sync_error_max_m,
-                    self.gripper_object_sync_error_last_m,
-                )
+            self.gripper_object_sync_error_last_m = float(gripper_error.max().detach().cpu().item())
+            self.gripper_object_sync_error_max_m = max(
+                self.gripper_object_sync_error_max_m,
+                self.gripper_object_sync_error_last_m,
+            )
+            gripper_anchor_b = self.gripper_anchor_b(policy_obs)
             object_body_clearance = torch.linalg.vector_norm(actual_object_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
-            gripper_body_clearance = torch.linalg.vector_norm(eef_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
+            gripper_body_clearance = torch.linalg.vector_norm(gripper_anchor_b[:, :2], dim=-1) - BODY_KEEP_OUT_RADIUS_M
             self.min_carried_object_body_clearance_m = min(
                 self.min_carried_object_body_clearance_m,
                 float(object_body_clearance.min().detach().cpu().item()),
@@ -741,6 +759,13 @@ class AgibotA2DCubeController:
             target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
             if float(torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - target_w[:, :3], dim=-1).max().item()) > 0.006:
                 self.move_object_toward(target_w, quat, 0.012)
+            else:
+                current = self.object_cmd_pos_w.clone()
+                self.object_cmd_pos_w = target_w.clone()
+                self.object_cmd_quat_w = quat.clone()
+                step = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - current[:, :3], dim=-1).max().item()
+                self.record_object_step(float(step), current, self.object_cmd_pos_w)
+                set_rigid_pose(self.env, self.spec.base.object_name, self.object_cmd_pos_w, quat)
         else:
             displacement = torch.linalg.vector_norm(self.object_cmd_pos_w[:, :3] - self.source_object_pos_w[:, :3], dim=-1)
             self.pregrasp_max_object_motion_m = max(
@@ -902,7 +927,7 @@ def main() -> None:
 
             target_w = torch.tensor(CUBE_TARGET_POS, dtype=torch.float32, device=env.device).repeat(env.num_envs, 1)
             command_error = float(torch.linalg.vector_norm(controller.object_cmd_pos_w - target_w, dim=-1).max().item())
-            if controller.released and command_error < 0.015:
+            if controller.released and controller.release_settle_steps >= POST_RELEASE_SETTLE_STEPS and command_error < 0.004:
                 done_step = step
                 break
             if controller.done:
@@ -936,8 +961,8 @@ def main() -> None:
         else release_cube_table_height_error_m
     )
     success = bool(
-        command_target_error_m < 0.02
-        and object_target_error_m < 0.03
+        command_target_error_m < 0.006
+        and object_target_error_m < 0.008
         and controller.collision_check_passed
         and min_runtime_table_clearance >= TABLE_CLEARANCE_THRESHOLD_M
         and static_obstacle_collision_check_passed
@@ -976,9 +1001,9 @@ def main() -> None:
         "object_max_step_to_w": controller.object_max_step_to_w,
         "object_teleport_step_threshold_m": OBJECT_TELEPORT_STEP_THRESHOLD_M,
         "pregrasp_max_object_motion_m": controller.pregrasp_max_object_motion_m,
-        "attach_blend_step_m": ATTACH_BLEND_STEP_M,
-        "attach_blend_error_max_m": controller.attach_blend_error_max_m,
-        "attach_blend_error_last_m": controller.attach_blend_error_last_m,
+        "lift_driven_pick_phases": sorted(LIFT_DRIVEN_PICK_PHASES),
+        "lift_driven_place_phases": sorted(LIFT_DRIVEN_PLACE_PHASES),
+        "object_attachment_mode": "left_gripper_pad_midpoint_locked_offset",
         "attached_sync_error_max_m": controller.attached_sync_error_max_m,
         "attached_sync_error_last_m": controller.attached_sync_error_last_m,
         "attached_sync_error_threshold_m": ATTACHED_SYNC_ERROR_THRESHOLD_M,
@@ -999,8 +1024,16 @@ def main() -> None:
         "cube_table_height_tolerance_m": CUBE_TABLE_HEIGHT_TOLERANCE_M,
         "grasp_eef_z_offset_m": GRASP_EEF_Z_OFFSET,
         "attached_offset_b": controller.attached_offset_b[0].detach().cpu().tolist(),
+        "attached_pad_offset_b": (
+            None
+            if controller.attached_pad_offset_b is None
+            else controller.attached_pad_offset_b[0].detach().cpu().tolist()
+        ),
+        "left_pad_body_names": controller.left_pad_body_names,
         "attached_offset_locked": controller.attached_offset_locked,
         "release_pose_w": controller.release_pose_w,
+        "post_release_settle_steps": controller.release_settle_steps,
+        "post_release_settle_steps_required": POST_RELEASE_SETTLE_STEPS,
         "lift_joint_name": "joint_lift_body",
         "lift_command_mode": "scripted_smooth_joint_position_with_arm_rmpflow",
         "lift_joint_range": [controller.lift_min, controller.lift_max],
