@@ -24,6 +24,8 @@ from pickplace_common import (
     world_to_base,
 )
 from play_mobile_pickplace import (
+    ViewportFrameCapture,
+    get_demo_camera_path,
     get_table_aabbs_xy,
     image_has_content,
     lerp_yaw,
@@ -43,16 +45,16 @@ TARGET_TABLE_POS = (4.80, 0.0, 0.60)
 TABLE_SCALE = (1.0, 1.0, 0.60)
 CUBE_SCALE = 2.0
 CUBE_HALF_HEIGHT = 0.0203 * CUBE_SCALE
-CUBE_SOURCE_POS = (0.39, -0.18, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
-CUBE_TARGET_POS = (4.09, -0.18, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+CUBE_SOURCE_POS = (0.405, -0.045, SOURCE_TABLE_POS[2] + CUBE_HALF_HEIGHT)
+CUBE_TARGET_POS = (4.105, -0.045, TARGET_TABLE_POS[2] + CUBE_HALF_HEIGHT)
 GRASP_EEF_X_OFFSET_M = -0.025
 GRASP_EEF_Y_OFFSET_M = -0.055
 GRASP_EEF_Z_OFFSET = 0.040
 APPROACH_EEF_Z_OFFSET = 0.220
 RETREAT_EEF_Z_OFFSET = 0.260
-CARRY_OBJECT_LIFT_M = 0.145
-CARRY_OBJECT_X_B = 0.74
-CARRY_OBJECT_Y_B = -0.14
+CARRY_OBJECT_LIFT_M = 0.155
+CARRY_OBJECT_X_B = 0.76
+CARRY_OBJECT_Y_B = -0.32
 AISLE_Y = -1.60
 START_DOCK_X_SHIFT_M = 0.11
 ROBOT_BASE_RADIUS_M = 0.42
@@ -63,7 +65,7 @@ PICK_XY_TOLERANCE_M = 0.16
 ATTACHED_SYNC_ERROR_THRESHOLD_M = 0.015
 ATTACHED_OBJECT_MAX_STEP_M = 0.085
 CARRIED_EEF_STEP_M = 0.035
-PRECLAMP_OBJECT_STEP_M = 0.006
+PRECLAMP_OBJECT_STEP_M = 0.0
 ATTACHED_OFFSET_BLEND_STEP_M = 0.004
 OFFSET_Z_BLEND_STEP_M = 0.0015
 CARRY_GRASP_VISUAL_OFFSET_B = (0.0, 0.0, 0.0)
@@ -74,7 +76,7 @@ GRIPPER_CAPTURE_ERROR_THRESHOLD_M = 0.035
 GRIPPER_CENTERED_GRASP_OFFSET_B = (0.0, 0.0, 0.028)
 GRIPPER_OPEN_JOINT_POS = 0.994
 GRIPPER_CUBE_HOLD_JOINT_POS = 0.18
-LIFT_DRIVEN_PICK_PHASES = {"lift_up_carry", "hold_carry"}
+LIFT_DRIVEN_PICK_PHASES = {"lift_up_carry", "retract_carry", "hold_carry"}
 LIFT_DRIVEN_PLACE_PHASES = {"lower_lift_place", "open"}
 QHD_WIDTH = 2560
 QHD_HEIGHT = 1440
@@ -82,8 +84,8 @@ QHD_HEIGHT = 1440
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Agibot A2D lift-assisted cube pick and place demo.")
-    parser.add_argument("--max_steps", type=int, default=3400)
-    parser.add_argument("--drive_steps", type=int, default=1800)
+    parser.add_argument("--max_steps", type=int, default=4600)
+    parser.add_argument("--drive_steps", type=int, default=2200)
     parser.add_argument("--record_frames", action="store_true")
     parser.add_argument("--frames_dir", default=None)
     parser.add_argument("--summary", default=None)
@@ -247,6 +249,7 @@ class AgibotA2DCubeController:
         "descend",
         "close",
         "lift_up_carry",
+        "retract_carry",
         "hold_carry",
         "undock",
         "aisle_drive",
@@ -368,6 +371,7 @@ class AgibotA2DCubeController:
         self.attached_offset_goal_b: torch.Tensor | None = None
         self.attached_offset_eef_b: torch.Tensor | None = None
         self.attached_pad_offset_b: torch.Tensor | None = None
+        self.attached_pad_offset_local: torch.Tensor | None = None
         self.centered_grasp_offset_b = torch.tensor(
             [GRIPPER_CENTERED_GRASP_OFFSET_B],
             dtype=torch.float32,
@@ -452,8 +456,14 @@ class AgibotA2DCubeController:
     def pick_lift_object_b(self) -> torch.Tensor:
         progress = self.pick_lift_progress()
         object_b = self.object_start_b.clone()
-        object_b[:, :2] = self.object_start_b[:, :2] + (self.carry_object_b[:, :2] - self.object_start_b[:, :2]) * progress
         object_b[:, 2:3] = self.object_start_b[:, 2:3] + CARRY_OBJECT_LIFT_M * progress
+        return object_b
+
+    def retract_carry_object_b(self) -> torch.Tensor:
+        raw = torch.clamp(torch.tensor(float(self.phase_step_count) / 120.0, device=self.device), 0.0, 1.0)
+        progress = smooth_step(raw).reshape(1, 1)
+        object_b = self.pick_lift_object_b()
+        object_b[:, :2] = object_b[:, :2] + (self.carry_object_b[:, :2] - object_b[:, :2]) * progress
         return object_b
 
     def target_lift_object_b(self) -> torch.Tensor:
@@ -576,6 +586,8 @@ class AgibotA2DCubeController:
         return policy_obs["eef_pos"].reshape(self.num_envs, 3)
 
     def attached_object_pos_b(self, eef_b: torch.Tensor, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.attached_pad_offset_local is not None:
+            return world_to_base(self.env, self.attached_object_pos_w(policy_obs))
         if self.attached_pad_offset_b is not None:
             return self.gripper_anchor_b(policy_obs) + self.attached_pad_offset_b
         return self.grasp_point_for_eef(eef_b, policy_obs)
@@ -593,6 +605,8 @@ class AgibotA2DCubeController:
 
     def attached_object_pos_w(self, policy_obs: dict[str, torch.Tensor]) -> torch.Tensor:
         anchor_w = self.gripper_anchor_w()
+        if anchor_w is not None and self.attached_pad_offset_local is not None:
+            return anchor_w + self.gripper_local_offset_to_world(self.attached_pad_offset_local)
         if anchor_w is not None and self.attached_pad_offset_b is not None:
             return anchor_w + self.gripper_offset_to_world(self.attached_pad_offset_b)
         eef_b = policy_obs["eef_pos"].reshape(self.num_envs, 3)
@@ -624,6 +638,7 @@ class AgibotA2DCubeController:
         if phase in (
             "approach",
             "lift_up_carry",
+            "retract_carry",
             "hold_carry",
             "undock",
             "aisle_drive",
@@ -651,9 +666,11 @@ class AgibotA2DCubeController:
         if phase == "close":
             return self.eef_for_centered_grasp(self.object_start_b, policy_obs), close_cmd, 120, True, False
         if phase == "lift_up_carry":
-            return self.eef_for_attached_object(self.pick_lift_object_b(), policy_obs), close_cmd, 0, True, False
-        if phase == "hold_carry":
             return self.eef_for_attached_object(self.pick_lift_object_b(), policy_obs), close_cmd, 120, True, False
+        if phase == "retract_carry":
+            return self.eef_for_attached_object(self.retract_carry_object_b(), policy_obs), close_cmd, 200, True, False
+        if phase == "hold_carry":
+            return self.eef_for_attached_object(self.carry_object_b, policy_obs), close_cmd, 180, True, False
         target_b = self.target_object_b()
         if phase == "transfer_align":
             return self.eef_for_attached_object(target_b + self._z(CARRY_OBJECT_LIFT_M), policy_obs), close_cmd, 24, True, False
@@ -686,7 +703,17 @@ class AgibotA2DCubeController:
     def command_gripper_aperture(self) -> None:
         if not self.gripper_hold_joint_ids:
             return
-        if self.phase_name in ("close", "lift_up_carry", "hold_carry", "undock", "aisle_drive", "dock", "transfer_align", "lower_lift_place"):
+        if self.phase_name in (
+            "close",
+            "lift_up_carry",
+            "retract_carry",
+            "hold_carry",
+            "undock",
+            "aisle_drive",
+            "dock",
+            "transfer_align",
+            "lower_lift_place",
+        ):
             target_value = GRIPPER_CUBE_HOLD_JOINT_POS
         elif self.attached:
             target_value = GRIPPER_CUBE_HOLD_JOINT_POS
@@ -775,7 +802,8 @@ class AgibotA2DCubeController:
             "lift_down_pick": 140,
             "descend": 170,
             "lift_up_carry": 145,
-            "hold_carry": 150,
+            "retract_carry": 220,
+            "hold_carry": 210,
             "transfer_align": 130,
             "lower_lift_place": 420,
             "retreat": 110,
@@ -825,6 +853,10 @@ class AgibotA2DCubeController:
         self.gripper_capture_offset_b = captured_pad_offset[0].detach().cpu().tolist()
         self.gripper_attach_snap_m = 0.0
         self.attached_pad_offset_b = captured_pad_offset.clone()
+        if anchor_w is not None:
+            self.attached_pad_offset_local = math_utils.quat_apply_inverse(
+                self.gripper_anchor_quat_w(), self.object_cmd_pos_w - anchor_w
+            )
 
         eef_quat_b = policy_obs["eef_quat"].reshape(self.num_envs, 4).clone()
         eef_quat_b = eef_quat_b / torch.linalg.vector_norm(eef_quat_b, dim=-1, keepdim=True).clamp_min(1.0e-6)
@@ -1050,6 +1082,12 @@ def main() -> None:
     static_obstacle_collision_check_passed = min_static_obstacle_clearance_m >= STATIC_OBSTACLE_CLEARANCE_THRESHOLD_M
     if args.record_frames:
         set_camera_view(env, env_step_s)
+    viewport_capture = None
+    if args.record_frames:
+        viewport_capture = ViewportFrameCapture(get_demo_camera_path(env), width=QHD_WIDTH, height=QHD_HEIGHT)
+        if not viewport_capture.ensure():
+            print("WARNING: viewport capture backend is unavailable; falling back to Camera sensor only.", flush=True)
+            viewport_capture = None
 
     frame_count = 0
     previous_frame_path: Path | None = None
@@ -1117,6 +1155,8 @@ def main() -> None:
             if args.record_frames and step % max(args.capture_every, 1) == 0:
                 frame_path = frames_dir / f"frame_{frame_count:04d}.png"
                 frame_ok = record_camera_frame(env, frame_path, env_step_s, previous_frame_path)
+                if not frame_ok and viewport_capture is not None:
+                    frame_ok = viewport_capture.save_frame(env, frame_path)
                 if not frame_ok:
                     print(f"WARNING: recorded frame appears black: {frame_path}", flush=True)
                 else:
@@ -1244,6 +1284,11 @@ def main() -> None:
             None
             if controller.attached_pad_offset_b is None
             else controller.attached_pad_offset_b[0].detach().cpu().tolist()
+        ),
+        "attached_pad_offset_local": (
+            None
+            if controller.attached_pad_offset_local is None
+            else controller.attached_pad_offset_local[0].detach().cpu().tolist()
         ),
         "gripper_center_body_names": controller.gripper_center_body_names,
         "left_pad_body_names": controller.left_pad_body_names,
