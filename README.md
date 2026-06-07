@@ -1,4 +1,21 @@
-# pick-and-place
+# Go2W–OpenArm Pick-and-Place Prototype
+
+Isaac Sim / Isaac Lab workspace for early Go2W–OpenArm pick-and-place and mobile-manipulation experiments.
+
+## Purpose
+
+This repository collects prototype scripts and assets for testing Go2W–OpenArm-style mobile-manipulation interactions in simulation.
+
+## Status
+
+Research prototype. This repository is kept public as supporting material for mobile-manipulation experiments.
+
+## Environment
+
+- Isaac Sim
+- Isaac Lab
+- Python
+- NVIDIA GPU environment
 
 Isaac Sim / IsaacLab pick-and-place demos run from `E:\pick-and-place`.
 
